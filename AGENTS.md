@@ -44,6 +44,9 @@ instructions change. Do not record temporary debugging output or personal data.
 - Use named MuJoCo bodies, never numeric body IDs.
 - Keep seeds, configuration, timing, checkpoints, exports, logs, and evaluation
   reports in the artifact bundle.
+- Pin the PyPI package playground to 0.0.5. This is the newest tagged MuJoCo
+  Playground release that still exports collision.geoms_colliding, wrapper,
+  and config.locomotion_params as required by this fork.
 
 ## Main entry points
 
@@ -116,3 +119,5 @@ download them before the session ends.
 On NaNs or reward collapse, resume the last good checkpoint with COM offsets
 halved. If failure repeats, return to moderate mass ranges before changing
 rewards.
+
+A successful stage retry must remove its stale stage_failure.json marker.

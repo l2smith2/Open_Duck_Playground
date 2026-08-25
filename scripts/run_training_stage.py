@@ -38,6 +38,7 @@ def main() -> None:
     if args.restore and not args.restore.exists():
         raise FileNotFoundError(args.restore)
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    failure_path = args.output_dir / "stage_failure.json"
 
     command = [
         sys.executable,
@@ -66,12 +67,13 @@ def main() -> None:
                 "if failure persists, return to moderate mass ranges before changing rewards."
             ),
         }
-        (args.output_dir / "stage_failure.json").write_text(
+        failure_path.write_text(
             json.dumps(failure, indent=2) + "\n", encoding="utf-8"
         )
         raise
     elapsed = time.perf_counter() - started
     checkpoint, onnx = latest_artifacts(args.output_dir)
+    failure_path.unlink(missing_ok=True)
     result = {
         "name": args.name,
         "status": "complete",

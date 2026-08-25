@@ -112,7 +112,8 @@ The setup cell:
 - installs git-lfs and uv;
 - clones your fork at codex/free-first-bdx-policy, or updates an existing Kaggle clone to that branch;
 - checks UPSTREAM_COMMIT;
-- installs dependencies;
+- installs dependencies, including the compatible playground 0.0.5 release;
+- verifies all required MuJoCo Playground imports before training;
 - refuses to continue unless JAX reports gpu;
 - creates /kaggle/working/artifacts.
 
@@ -123,6 +124,10 @@ Do not use Kaggle's Dependency Manager for this project. The notebook's uv sync 
 If JAX reports Unable to load cuSPARSE or CUDA error 303 and falls back to CPU, re-import the corrected local notebook and rerun setup. It first proves that Kaggle attached a GPU, then keeps only Kaggle's mounted NVIDIA driver path while preventing the system CUDA toolkit from shadowing JAX's bundled libraries.
 
 If the new setup stops with No NVIDIA GPU is attached, choose T4 x2 or another GPU in Settings, accept Kaggle's session restart, and run Setup again. Dependency changes cannot fix a CPU-only session.
+
+If training reports that mujoco_playground._src.collision is missing, an unpinned setup installed playground 0.2.0. Re-import the corrected notebook and rerun Setup; uv will downgrade it to the compatible 0.0.5 release before the smoke test.
+
+The failed smoke directory can be reused. A successful retry automatically removes its stale stage_failure.json marker, so no manual Kaggle file cleanup is required.
 
 Always download the generated ZIP before ending a session.
 
