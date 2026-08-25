@@ -121,6 +121,8 @@ If setup reports that UPSTREAM_COMMIT is missing, the older notebook cloned the 
 
 Do not use Kaggle's Dependency Manager for this project. The notebook's uv sync command owns the reproducible Python environment.
 
+If uv sync reports Failed to query Python interpreter for .venv/bin/python with Permission denied, Kaggle File persistence restored a broken virtual environment. Re-import the corrected notebook and run Setup again. Setup recreates only .venv; the repository, artifacts, and checkpoints are preserved.
+
 If JAX reports Unable to load cuSPARSE or CUDA error 303 and falls back to CPU, re-import the corrected local notebook and rerun setup. It first proves that Kaggle attached a GPU, then keeps only Kaggle's mounted NVIDIA driver path while preventing the system CUDA toolkit from shadowing JAX's bundled libraries.
 
 If the new setup stops with No NVIDIA GPU is attached, choose T4 x2 or another GPU in Settings, accept Kaggle's session restart, and run Setup again. Dependency changes cannot fix a CPU-only session.

@@ -78,6 +78,8 @@ download them before the session ends.
 - Keep Kaggle File persistence on to preserve /kaggle/working across interactive
   restarts, but treat it as best-effort and continue packaging/downloading
   artifact ZIPs before a session ends.
+- File persistence may restore .venv without a usable executable or symlink.
+  Setup must recreate only .venv with uv venv --clear in that condition.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
 
