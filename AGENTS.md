@@ -47,6 +47,8 @@ instructions change. Do not record temporary debugging output or personal data.
 - Pin the PyPI package playground to 0.0.5. This is the newest tagged MuJoCo
   Playground release that still exports collision.geoms_colliding, wrapper,
   and config.locomotion_params as required by this fork.
+- Parse compatibility probe values from labelled lines because first-time imports
+  may print dependency download status to standard output.
 
 ## Main entry points
 

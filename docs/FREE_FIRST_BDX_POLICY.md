@@ -114,6 +114,7 @@ The setup cell:
 - checks UPSTREAM_COMMIT;
 - installs dependencies, including the compatible playground 0.0.5 release;
 - verifies all required MuJoCo Playground imports before training;
+- allows the first import to download mujoco_menagerie and ignores its status messages when reading the package version;
 - refuses to continue unless JAX reports gpu;
 - creates /kaggle/working/artifacts.
 
