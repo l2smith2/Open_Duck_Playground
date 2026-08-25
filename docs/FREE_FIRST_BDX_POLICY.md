@@ -117,7 +117,11 @@ The setup cell:
 
 If setup reports that UPSTREAM_COMMIT is missing, the older notebook cloned the fork's default branch. Run START_FREE_TRAINING.cmd again, re-import the newly highlighted .local-kaggle notebook, and rerun its setup cell. The corrected setup keeps the existing download but switches it to the required training branch.
 
-If JAX reports Unable to load cuSPARSE and falls back to CPU, Kaggle's system LD_LIBRARY_PATH is shadowing the CUDA libraries bundled with JAX. Re-import the corrected local notebook and rerun setup; it removes that conflicting path before JAX or any training subprocess starts.
+Do not use Kaggle's Dependency Manager for this project. The notebook's uv sync command owns the reproducible Python environment.
+
+If JAX reports Unable to load cuSPARSE or CUDA error 303 and falls back to CPU, re-import the corrected local notebook and rerun setup. It first proves that Kaggle attached a GPU, then keeps only Kaggle's mounted NVIDIA driver path while preventing the system CUDA toolkit from shadowing JAX's bundled libraries.
+
+If the new setup stops with No NVIDIA GPU is attached, choose T4 x2 or another GPU in Settings, accept Kaggle's session restart, and run Setup again. Dependency changes cannot fix a CPU-only session.
 
 Always download the generated ZIP before ending a session.
 

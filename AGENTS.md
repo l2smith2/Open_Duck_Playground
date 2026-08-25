@@ -63,9 +63,11 @@ download them before the session ends.
 
 - Clone or fetch codex/free-first-bdx-policy, not the fork's default branch.
 - Confirm UPSTREAM_COMMIT before dependency installation or training.
-- JAX's pip CUDA wheels provide their own CUDA libraries. Remove
-  LD_LIBRARY_PATH before importing JAX or starting training so Kaggle's system
-  CUDA paths cannot shadow bundled cuSPARSE and related libraries.
+- Require nvidia-smi -L to report at least one attached GPU before installing.
+- JAX's pip wheels provide the CUDA toolkit libraries. Keep only Kaggle's
+  /usr/local/nvidia driver directories in LD_LIBRARY_PATH so the driver remains
+  visible without system CUDA libraries shadowing bundled cuSPARSE.
+- Do not use Kaggle's Dependency Manager; uv sync owns project dependencies.
 - Use UV_LINK_MODE=copy on Kaggle to avoid unsupported hardlinks.
 - Setup passes only when jax.default_backend() is gpu.
 - Record jax.local_device_count(). T4 x2 should normally report two devices;
