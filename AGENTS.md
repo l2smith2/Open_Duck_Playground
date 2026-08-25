@@ -72,6 +72,9 @@ download them before the session ends.
 - Setup passes only when jax.default_backend() is gpu.
 - Record jax.local_device_count(). T4 x2 should normally report two devices;
   P100 reports one.
+- Keep Kaggle File persistence on to preserve /kaggle/working across interactive
+  restarts, but treat it as best-effort and continue packaging/downloading
+  artifact ZIPs before a session ends.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
 

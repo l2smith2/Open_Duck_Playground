@@ -92,17 +92,18 @@ When using START_FREE_TRAINING.cmd, do not edit the tracked notebook with your u
 
 You are uploading the .local-kaggle copy, not the similarly named file in the public notebooks folder. The local copy already contains the fork URL, so there is nothing to paste.
 
-## Step 3: enable Internet and the free GPU
+## Step 3: enable Internet, persistence, and the free GPU
 
 With the imported notebook open:
 
 1. Find the Settings pane on the right side of the notebook editor.
 2. Under Session options, turn Internet on.
-3. Under Accelerator, choose GPU.
-4. Choose P100 if Kaggle offers it; otherwise T4 is suitable.
+3. Turn File persistence on so /kaggle/working can survive interactive restarts.
+4. Under Accelerator, choose T4 x2; P100 remains acceptable when available.
 5. Accept the session restart if Kaggle asks.
-6. Return to the first code cell and click its triangular Run button.
-7. Wait for the final line to say Ready: gpu, show at least one device, and then show the artifacts path.
+6. Confirm File persistence is still on after the restart.
+7. Return to the first code cell and click its triangular Run button.
+8. Wait for the final line to say Ready: gpu, show at least one device, and then show the artifacts path.
 
 If Internet or GPU controls are missing or disabled, first check that you are signed in, that Kaggle has completed any requested account/phone verification, and that your weekly GPU quota is not exhausted. After enabling the GPU, rerun the setup cell from the beginning because changing accelerators restarts the session.
 

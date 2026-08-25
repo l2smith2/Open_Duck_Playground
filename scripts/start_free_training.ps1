@@ -91,8 +91,9 @@ Write-Host "  2. If you see Import Notebook, choose Local. In the editor use Fil
 Write-Host "  3. Select the highlighted .local-kaggle\free_first_bdx_walk.ipynb file."
 Write-Host "  4. If asked, choose Quick Save - do not choose Commit & Run or Save & Run All."
 Write-Host "  5. In the right Settings pane, turn Internet on."
-Write-Host "  6. Under Accelerator choose GPU: P100 if offered, otherwise T4. Confirm the restart."
-Write-Host "  7. Run only the first Setup code cell and check that it prints Ready: gpu."
+Write-Host "  6. Turn File persistence on."
+Write-Host "  7. Under Accelerator choose T4 x2 (P100 is acceptable). Confirm the restart."
+Write-Host "  8. Run only the first Setup code cell and check that it prints Ready: gpu."
 Write-Host ""
 Write-Host "The notebook path is also on your clipboard as a fallback."
 
