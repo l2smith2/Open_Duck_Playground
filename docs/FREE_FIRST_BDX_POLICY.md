@@ -102,7 +102,7 @@ With the imported notebook open:
 4. Choose P100 if Kaggle offers it; otherwise T4 is suitable.
 5. Accept the session restart if Kaggle asks.
 6. Return to the first code cell and click its triangular Run button.
-7. Wait for the final line to say Ready: gpu followed by the artifacts path.
+7. Wait for the final line to say Ready: gpu, show at least one device, and then show the artifacts path.
 
 If Internet or GPU controls are missing or disabled, first check that you are signed in, that Kaggle has completed any requested account/phone verification, and that your weekly GPU quota is not exhausted. After enabling the GPU, rerun the setup cell from the beginning because changing accelerators restarts the session.
 
@@ -116,6 +116,8 @@ The setup cell:
 - creates /kaggle/working/artifacts.
 
 If setup reports that UPSTREAM_COMMIT is missing, the older notebook cloned the fork's default branch. Run START_FREE_TRAINING.cmd again, re-import the newly highlighted .local-kaggle notebook, and rerun its setup cell. The corrected setup keeps the existing download but switches it to the required training branch.
+
+If JAX reports Unable to load cuSPARSE and falls back to CPU, Kaggle's system LD_LIBRARY_PATH is shadowing the CUDA libraries bundled with JAX. Re-import the corrected local notebook and rerun setup; it removes that conflicting path before JAX or any training subprocess starts.
 
 Always download the generated ZIP before ending a session.
 
