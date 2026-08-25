@@ -113,6 +113,7 @@ The setup cell:
 - clones your fork at codex/free-first-bdx-policy, or updates an existing Kaggle clone to that branch;
 - checks UPSTREAM_COMMIT;
 - installs dependencies, including the compatible playground 0.0.5 release;
+- uses the committed lockfile for Brax 0.13.0, JAX/JAXlib 0.6.2, and MuJoCo/MJX 3.3.3;
 - verifies all required MuJoCo Playground imports before training;
 - allows the first import to download mujoco_menagerie and ignores its status messages when reading the package version;
 - refuses to continue unless JAX reports gpu;
@@ -131,6 +132,8 @@ If the new setup stops with No NVIDIA GPU is attached, choose T4 x2 or another G
 If training reports that mujoco_playground._src.collision is missing, an unpinned setup installed playground 0.2.0. Re-import the corrected notebook and rerun Setup; uv will downgrade it to the compatible 0.0.5 release before the smoke test.
 
 The failed smoke directory can be reused. A successful retry automatically removes its stale stage_failure.json marker, so no manual Kaggle file cleanup is required.
+
+If PPO reports that jax.device_put_replicated is deprecated, an unlocked setup selected a JAX release that is too new for this Brax trainer. Re-import the corrected notebook and rerun Setup. It uses the committed lockfile, downgrades the virtual environment to JAX/JAXlib 0.6.2 and Brax 0.13.0, and verifies those versions before training.
 
 Always download the generated ZIP before ending a session.
 

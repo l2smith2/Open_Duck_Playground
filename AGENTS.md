@@ -47,6 +47,11 @@ instructions change. Do not record temporary debugging output or personal data.
 - Pin the PyPI package playground to 0.0.5. This is the newest tagged MuJoCo
   Playground release that still exports collision.geoms_colliding, wrapper,
   and config.locomotion_params as required by this fork.
+- Pin Brax to 0.13.0 and JAX/JAXlib to 0.6.2. Later JAX releases remove
+  device_put_replicated while this Brax PPO implementation still uses it.
+- Pin MuJoCo and MuJoCo MJX to 3.3.3 for the Playground 0.0.5 training stack.
+- Commit uv.lock and run Kaggle setup with uv sync --locked so dependency
+  resolution cannot drift between sessions.
 - Parse compatibility probe values from labelled lines because first-time imports
   may print dependency download status to standard output.
 

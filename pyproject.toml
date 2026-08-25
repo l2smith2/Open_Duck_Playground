@@ -5,12 +5,15 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "brax==0.13.0",
     "framesviewer>=1.0.2",
-    "jax[cuda12]>=0.5.0",
-    "jaxlib>=0.5.0",
+    "jax[cuda12]==0.6.2",
+    "jaxlib==0.6.2",
     "jaxtyping>=0.2.38",
     "matplotlib>=3.10.0",
     "mediapy>=1.2.2",
+    "mujoco==3.3.3",
+    "mujoco-mjx==3.3.3",
     "onnxruntime>=1.20.1",
     "playground==0.0.5",
     "pygame>=2.6.1",
