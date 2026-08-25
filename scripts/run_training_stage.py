@@ -21,6 +21,61 @@ def latest_artifacts(output_dir: Path) -> tuple[Path, Path]:
     return checkpoints[-1], exports[-1]
 
 
+def checkpoint_step(checkpoint: Path) -> int | None:
+    try:
+        return int(checkpoint.name.rsplit("_", 1)[-1])
+    except ValueError:
+        return None
+
+
+def reusable_stage_result(
+    result_path: Path,
+    *,
+    name: str,
+    steps: int,
+    randomization_stage: str,
+    seed: int,
+    restore: Path | None,
+    imitation_reward_weight_scale: float,
+    com_offset_scale: float,
+) -> dict | None:
+    if not result_path.exists():
+        return None
+    try:
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    expected = {
+        "name": name,
+        "status": "complete",
+        "steps_added": steps,
+        "randomization_stage": randomization_stage,
+        "seed": seed,
+        "restore": str(restore.resolve()) if restore else None,
+        "imitation_reward_weight_scale": imitation_reward_weight_scale,
+        "com_offset_scale": com_offset_scale,
+    }
+    if any(result.get(key) != value for key, value in expected.items()):
+        return None
+
+    checkpoint_value = result.get("checkpoint")
+    onnx_value = result.get("onnx")
+    if not isinstance(checkpoint_value, str) or not isinstance(onnx_value, str):
+        return None
+    checkpoint = Path(checkpoint_value)
+    onnx = Path(onnx_value)
+    output_dir = result_path.parent.resolve()
+    try:
+        checkpoint.resolve().relative_to(output_dir)
+        onnx.resolve().relative_to(output_dir)
+    except ValueError:
+        return None
+    if not checkpoint.is_dir() or not onnx.is_file():
+        return None
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--name", required=True)
@@ -39,6 +94,22 @@ def main() -> None:
         raise FileNotFoundError(args.restore)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     failure_path = args.output_dir / "stage_failure.json"
+    result_path = args.output_dir / "stage_result.json"
+    completed = reusable_stage_result(
+        result_path,
+        name=args.name,
+        steps=args.steps,
+        randomization_stage=args.randomization_stage,
+        seed=args.seed,
+        restore=args.restore,
+        imitation_reward_weight_scale=args.imitation_reward_weight_scale,
+        com_offset_scale=args.com_offset_scale,
+    )
+    if completed is not None:
+        failure_path.unlink(missing_ok=True)
+        print(f"Reusing completed stage: {args.name}")
+        print(json.dumps(completed, indent=2))
+        return
 
     command = [
         sys.executable,
@@ -86,8 +157,8 @@ def main() -> None:
         "onnx": str(onnx.resolve()),
         "imitation_reward_weight_scale": args.imitation_reward_weight_scale,
         "com_offset_scale": args.com_offset_scale,
+        "final_training_step": checkpoint_step(checkpoint),
     }
-    result_path = args.output_dir / "stage_result.json"
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))
 

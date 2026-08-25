@@ -146,6 +146,8 @@ The notebook first runs:
 - 1M steps: installation smoke test;
 - 20M steps: timed nominal benchmark.
 
+If a session ends after a stage prints a complete stage_result.json, rerunning the same notebook section reuses that stage when its configuration, checkpoint, and ONNX export all match. A partial or mismatched stage runs again.
+
 The benchmark is accepted only when:
 
 - evaluation reward rises rather than collapsing;

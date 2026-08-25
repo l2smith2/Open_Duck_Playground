@@ -89,6 +89,9 @@ download them before the session ends.
   Setup must recreate only .venv with uv venv --clear in that condition.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
+- Reuse a complete stage only when its full configuration matches and both its
+  checkpoint and ONNX export still exist. Never treat a partial stage or a
+  missing artifact as complete.
 
 ## Training sequence
 
