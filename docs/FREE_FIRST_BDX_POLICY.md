@@ -4,7 +4,9 @@ This is a beginner-friendly, simulation-only workflow for Open Duck Mini v2. It 
 
 ## Easiest start on Windows
 
-Double-click START_FREE_TRAINING.cmd in the repository folder. The launcher validates the notebook, corrects the GitHub remote, offers to commit/push unpublished changes, opens Kaggle, and highlights the notebook file. You only need to sign in and click Kaggle's import/GPU controls.
+Double-click START_FREE_TRAINING.cmd in the repository folder. The launcher validates and publishes the branch, reads your fork URL from the existing Git remote, and creates a configured notebook under .local-kaggle. That folder is ignored by Git, so the public notebook and guide stay generic. It then opens Kaggle and highlights the exact file to upload.
+
+Your GitHub username is necessarily visible as the owner of your public fork. Do not put passwords, access tokens, Kaggle credentials, private hardware details, or private artifact data in the notebook or repository.
 
 The launcher intentionally does not use Kaggle CLI upload because that command immediately runs the whole notebook and would bypass the benchmark and human-review gates.
 
@@ -55,28 +57,54 @@ RunPod lists Community RTX 4090 capacity from roughly US$0.34/hour at the time t
 
 ## Step 1: create your GitHub fork
 
-The local implementation branch is codex/free-first-bdx-policy. A remote personal fork cannot be created without your GitHub account.
+The working branch is codex/free-first-bdx-policy.
 
 1. Open https://github.com/apirrone/Open_Duck_Playground and select Fork.
-2. Push this local branch to your fork.
-3. Replace l2smith2 in the Kaggle notebook with your account name.
+2. Set your fork as the local repository's origin.
+3. Push this branch to your fork.
 
-Example from this repository:
+Generic example:
 
-    git remote add origin https://github.com/l2smith2/Open_Duck_Playground.git
+    git remote add origin https://github.com/YOUR_GITHUB_USER/Open_Duck_Playground.git
     git push -u origin codex/free-first-bdx-policy
 
 The upstream remote should remain:
 
     https://github.com/apirrone/Open_Duck_Playground.git
 
-## Step 2: start Kaggle
+When using START_FREE_TRAINING.cmd, do not edit the tracked notebook with your username. The launcher creates a configured, Git-ignored copy for you.
 
-1. Create a Kaggle notebook.
-2. Enable Internet.
-3. Select a P100 GPU when offered; otherwise select a T4.
-4. Upload notebooks/free_first_bdx_walk.ipynb.
-5. Run one cell at a time.
+## Step 2: import the notebook into Kaggle
+
+1. Double-click START_FREE_TRAINING.cmd.
+2. Wait for two windows:
+
+   - your browser opens Kaggle;
+   - File Explorer highlights .local-kaggle/free_first_bdx_walk.ipynb.
+
+3. Sign in to Kaggle if asked.
+4. Import the highlighted file:
+
+   - if the Kaggle Code page shows Import Notebook, choose it, choose Local, and select the highlighted file;
+   - if a blank notebook editor opens, use File > Import Notebook, then upload the highlighted file.
+
+5. If Kaggle asks how to save it, choose Quick Save. Do not choose Commit & Run or Save & Run All, because this workflow has deliberate stop-and-review points.
+
+You are uploading the .local-kaggle copy, not the similarly named file in the public notebooks folder. The local copy already contains the fork URL, so there is nothing to paste.
+
+## Step 3: enable Internet and the free GPU
+
+With the imported notebook open:
+
+1. Find the Settings pane on the right side of the notebook editor.
+2. Under Session options, turn Internet on.
+3. Under Accelerator, choose GPU.
+4. Choose P100 if Kaggle offers it; otherwise T4 is suitable.
+5. Accept the session restart if Kaggle asks.
+6. Return to the first code cell and click its triangular Run button.
+7. Wait for the final line to say Ready: gpu followed by the artifacts path.
+
+If Internet or GPU controls are missing or disabled, first check that you are signed in, that Kaggle has completed any requested account/phone verification, and that your weekly GPU quota is not exhausted. After enabling the GPU, rerun the setup cell from the beginning because changing accelerators restarts the session.
 
 The setup cell:
 
@@ -89,7 +117,9 @@ The setup cell:
 
 Always download the generated ZIP before ending a session.
 
-## Step 3: smoke and benchmark
+Official interface reference: https://www.kaggle.com/docs/notebooks
+
+## Step 4: smoke and benchmark
 
 The notebook first runs:
 
@@ -115,7 +145,7 @@ Stay free when the projection is under 10 hours. Move to paid resume when any on
 
 Do not redo completed stages.
 
-## Step 4: audit the randomizer
+## Step 5: audit the randomizer
 
 The notebook runs:
 
@@ -132,7 +162,7 @@ It checks:
 
 Do not train the full stage if this audit fails.
 
-## Step 5: robust neutral training
+## Step 6: robust neutral training
 
 Training adds exactly these steps:
 
@@ -152,7 +182,7 @@ Full envelope:
 - trunk COM: +/-15 mm forward/vertical, +/-10 mm sideways;
 - head COM: +/-15 mm forward, +/-10 mm sideways, +/-20 mm vertically.
 
-## Step 6: make the original style reference
+## Step 7: make the original style reference
 
 Use the notebook reference section or run:
 
@@ -188,7 +218,7 @@ Fit and copy only after approval:
 
 The fit command refuses to run without the approval record.
 
-## Step 7: style fine-tuning
+## Step 8: style fine-tuning
 
 1. Start seeds 201, 202, and 203 from the accepted 300M neutral checkpoint.
 2. Train each for 30M steps with full randomization.
@@ -199,7 +229,7 @@ The fit command refuses to run without the approval record.
 
 Keep imitation_reward_weight_scale at 1.0. If a candidate remains stable but visibly ignores the reference, retry only that control at 1.5. Do not change other rewards first.
 
-## Step 8: objective evaluation
+## Step 9: objective evaluation
 
 Neutral or style mass grid:
 
@@ -242,7 +272,7 @@ Export smoke:
 
 That evaluates all nine mass cells for 60 seconds, which is stricter than the required nominal, heavy-head/light-body, and heavy-body/heavy-head subset.
 
-## Step 9: paid resume only when triggered
+## Step 10: paid resume only when triggered
 
 Check the live RunPod price before creating a pod. Use Community RTX 4090 only at US$0.50/hour or less.
 

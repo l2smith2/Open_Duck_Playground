@@ -14,3 +14,4 @@ reference_review_approved.json
 stage_result.json
 stage_failure.json
 run_manifest.json
+.local-kaggle/
