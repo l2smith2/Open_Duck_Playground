@@ -109,11 +109,13 @@ If Internet or GPU controls are missing or disabled, first check that you are si
 The setup cell:
 
 - installs git-lfs and uv;
-- clones your fork;
+- clones your fork at codex/free-first-bdx-policy, or updates an existing Kaggle clone to that branch;
 - checks UPSTREAM_COMMIT;
 - installs dependencies;
 - refuses to continue unless JAX reports gpu;
 - creates /kaggle/working/artifacts.
+
+If setup reports that UPSTREAM_COMMIT is missing, the older notebook cloned the fork's default branch. Run START_FREE_TRAINING.cmd again, re-import the newly highlighted .local-kaggle notebook, and rerun its setup cell. The corrected setup keeps the existing download but switches it to the required training branch.
 
 Always download the generated ZIP before ending a session.
 
