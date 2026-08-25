@@ -1,0 +1,26 @@
+{
+  "name": "bdx_inspired_original_v1",
+  "robot": "open_duck_mini_v2",
+  "inspiration_only": true,
+  "traits": [
+    "waddle",
+    "slight crouch",
+    "light bounce",
+    "deliberate foot lift",
+    "stable upper-body timing"
+  ],
+  "parameters": {
+    "walk_com_height": 0.19,
+    "walk_foot_height": 0.045,
+    "walk_trunk_pitch": -4.0,
+    "single_support_duration": 0.18,
+    "feet_spacing": 0.176
+  },
+  "baseline": {
+    "walk_com_height": 0.20,
+    "walk_foot_height": 0.04,
+    "walk_trunk_pitch": -3.0,
+    "single_support_duration": 0.17,
+    "feet_spacing": 0.16
+  }
+}

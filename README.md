@@ -1,5 +1,11 @@
 # Open Duck Playground
 
+## Free-first robust BDX-inspired policy
+
+This fork adds a simulation-only, reproducible Open Duck Mini v2 workflow with staged trunk/head mass and COM randomization, a Kaggle notebook, ONNX mass-grid acceptance, and an original reference-motion review gate. It does not add a head IMU or hardware control.
+
+Start with [the beginner guide](docs/FREE_FIRST_BDX_POLICY.md) and [the Kaggle notebook](notebooks/free_first_bdx_walk.ipynb).
+
 # Installation 
 
 Install uv

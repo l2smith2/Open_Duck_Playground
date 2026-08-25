@@ -8,4 +8,9 @@ mujoco_saved_obs.pkl
 checkpoints/
 .tmp/
 *.onnx
-*.TXT
+*.TXTartifacts/
+*.zip
+reference_review_approved.json
+stage_result.json
+stage_failure.json
+run_manifest.json
