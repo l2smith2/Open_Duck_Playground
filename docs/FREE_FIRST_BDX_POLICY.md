@@ -2,6 +2,12 @@
 
 This is a beginner-friendly, simulation-only workflow for Open Duck Mini v2. It produces evidence, checkpoints, and an ONNX policy. It does not deploy to a robot, add a head IMU, or control hardware.
 
+## Easiest start on Windows
+
+Double-click START_FREE_TRAINING.cmd in the repository folder. The launcher validates the notebook, corrects the GitHub remote, offers to commit/push unpublished changes, opens Kaggle, and highlights the notebook file. You only need to sign in and click Kaggle's import/GPU controls.
+
+The launcher intentionally does not use Kaggle CLI upload because that command immediately runs the whole notebook and would bypass the benchmark and human-review gates.
+
 The motion is original and only inspired by visible BDX traits. Do not copy proprietary animation data.
 
 ## What is already implemented

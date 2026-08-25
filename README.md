@@ -6,6 +6,8 @@ This fork adds a simulation-only, reproducible Open Duck Mini v2 workflow with s
 
 Start with [the beginner guide](docs/FREE_FIRST_BDX_POLICY.md) and [the Kaggle notebook](notebooks/free_first_bdx_walk.ipynb).
 
+On Windows, double-click [START_FREE_TRAINING.cmd](START_FREE_TRAINING.cmd). It validates and publishes the branch, opens Kaggle, and highlights the notebook file so no commands or paths need to be copied.
+
 # Installation 
 
 Install uv
