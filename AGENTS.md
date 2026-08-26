@@ -20,8 +20,9 @@ update the relevant section here when any of these change:
 - mass/COM randomization limits or policy interfaces;
 - tests, acceptance thresholds, safety boundaries, or known setup fixes.
 
-Also update README.md and docs/FREE_FIRST_BDX_POLICY.md when user-facing
-instructions change. Do not record temporary debugging output or personal data.
+Also update README.md and docs/FREE_FIRST_BDX_POLICY.md whenever user-facing
+API, launcher, or local-AI workflow instructions change. Do not record temporary
+debugging output or personal data.
 
 ## Public-repository privacy
 
@@ -33,6 +34,8 @@ instructions change. Do not record temporary debugging output or personal data.
   configured notebook only to .local-kaggle/, which must remain ignored.
 - Store training artifacts outside Git. Never commit checkpoints, ONNX exports,
   videos, logs, or generated credential files.
+- START_KAGGLE_BATCH.cmd writes user-specific Kaggle API job files only under
+  .kaggle-api/, which must remain ignored.
 
 ## Repository and reproducibility
 
@@ -58,6 +61,7 @@ instructions change. Do not record temporary debugging output or personal data.
 ## Main entry points
 
 - Beginner launcher: START_FREE_TRAINING.cmd
+- Kaggle API batch launcher: START_KAGGLE_BATCH.cmd
 - Kaggle template: notebooks/free_first_bdx_walk.ipynb
 - Full guide: docs/FREE_FIRST_BDX_POLICY.md
 - Training stage: scripts/run_training_stage.py
@@ -92,6 +96,9 @@ download them before the session ends.
 - Reuse a complete stage only when its full configuration matches and both its
   checkpoint and ONNX export still exist. Never treat a partial stage or a
   missing artifact as complete.
+- Kaggle API batch runs are non-interactive clean workers. They are useful for
+  smoke and benchmark automation, but they do not replace interactive file
+  persistence or human reference-motion review gates.
 
 ## Training sequence
 

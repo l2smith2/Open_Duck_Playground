@@ -8,6 +8,10 @@ Start with [the beginner guide](docs/FREE_FIRST_BDX_POLICY.md) and [the Kaggle n
 
 On Windows, double-click [START_FREE_TRAINING.cmd](START_FREE_TRAINING.cmd). It validates and publishes the branch, creates a personalized but Git-ignored Kaggle upload copy, opens Kaggle, and highlights that file so no commands or paths need to be copied.
 
+For repeatable non-interactive smoke and benchmark jobs, use [START_KAGGLE_BATCH.cmd](START_KAGGLE_BATCH.cmd) after setting up the Kaggle API. See [Kaggle API batch runs](docs/KAGGLE_API_BATCH.md).
+
+For working with a local Ollama model, see [Local AI workflow](docs/LOCAL_AI_WORKFLOW.md).
+
 # Installation 
 
 Install uv

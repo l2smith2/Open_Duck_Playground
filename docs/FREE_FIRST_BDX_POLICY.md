@@ -10,6 +10,8 @@ Your GitHub username is necessarily visible as the owner of your public fork. Do
 
 The launcher intentionally does not use Kaggle CLI upload because that command immediately runs the whole notebook and would bypass the benchmark and human-review gates.
 
+After the Kaggle API is configured, START_KAGGLE_BATCH.cmd can run a private non-interactive smoke plus benchmark job and download its outputs. Use that path for repeatable runs where browser persistence is not needed. See docs/KAGGLE_API_BATCH.md.
+
 The motion is original and only inspired by visible BDX traits. Do not copy proprietary animation data.
 
 ## What is already implemented
