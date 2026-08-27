@@ -128,6 +128,10 @@ download them before the session ends.
   Setup must recreate only .venv with uv venv --clear in that condition.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
+- A notebook cell must never depend on a Python variable defined by an earlier
+  cell for pipeline state. A Kaggle restart clears the kernel while
+  /kaggle/working survives, so later cells read completed stages from disk via
+  load_stage(); only then does resuming actually work.
 - Reuse a complete stage only when its full configuration matches and both its
   checkpoint and ONNX export still exist. Never treat a partial stage or a
   missing artifact as complete.
