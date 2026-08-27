@@ -12,7 +12,7 @@
   "parameters": {
     "walk_com_height": 0.21,
     "walk_foot_height": 0.02,
-    "walk_trunk_pitch": -4.0,
+    "walk_trunk_pitch": -6.0,
     "single_support_duration": 0.18,
     "feet_spacing": 0.16
   },
