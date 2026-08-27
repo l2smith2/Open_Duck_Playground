@@ -65,6 +65,9 @@ debugging output or personal data.
 - Kaggle template: notebooks/free_first_bdx_walk.ipynb
 - Full guide: docs/FREE_FIRST_BDX_POLICY.md
 - Training stage: scripts/run_training_stage.py
+- BDX reference motion review: scripts/replay_bdx_reference.py (works where
+  the upstream generator's own replay_motion.py does not: no Windows
+  wheels, broken under WSLg)
 - Randomization audit: scripts/randomization_audit.py
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
 - Style review: scripts/make_blind_style_review.py

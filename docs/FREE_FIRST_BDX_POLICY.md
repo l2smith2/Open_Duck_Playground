@@ -214,15 +214,33 @@ Use the notebook reference section or run:
 
 It generates eight motions covering standing, forward/backward, sideways, and turning commands with:
 
-- walk_com_height 0.19;
-- walk_foot_height 0.045;
-- walk_trunk_pitch -4 degrees;
+- walk_com_height 0.21;
+- walk_foot_height 0.02;
+- walk_trunk_pitch -6 degrees;
 - single_support_duration 0.18;
-- feet_spacing 0.176.
+- feet_spacing 0.16.
+
+These values are tuned to keep both knees inside the model's joint range and
+bending in the natural direction (see the joint_limit_note in
+configs/bdx_inspired_reference.json). The upstream gait generator disables
+its own IK joint limits, so it will silently emit unreachable poses if these
+parameters drift: lowering walk_com_height, lowering feet_spacing, or
+raising walk_foot_height all increase required knee flexion. Re-validate
+with --check (below) after changing any of them.
 
 Replay each generated JSON locally:
 
-    uv run scripts/replay_motion.py -f MOTION.json --hardware
+    uv run python scripts/replay_bdx_reference.py -f MOTION.json
+
+The upstream generator's own scripts/replay_motion.py depends on
+FramesViewer/placo, which ships no Windows wheels and hits a GLX threading
+error under WSLg, so it does not work on this platform. This fork's
+replay_bdx_reference.py plays the same recorded JSON back in the MuJoCo
+viewer this project already depends on, on any platform that can run
+mujoco_infer.py. Add --check to report joint-range violations without
+opening a viewer window:
+
+    uv run python scripts/replay_bdx_reference.py -f MOTION.json --check
 
 Look for:
 
