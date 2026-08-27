@@ -38,19 +38,36 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
     (artifact_dir / "style_config.json").write_text(
         json.dumps(load_style(), indent=2) + "\n", encoding="utf-8"
     )
-    common = [
-        "uv", "run", str(script), "--duck", "open_duck_mini_v2",
-        "--output_dir", str(recordings), "--length", "10",
-        "--walk_com_height", str(params["walk_com_height"]),
-        "--walk_foot_height", str(params["walk_foot_height"]),
-        "--walk_trunk_pitch", str(params["walk_trunk_pitch"]),
-        "--single_support_duration", str(params["single_support_duration"]),
-        "--feet_spacing", str(params["feet_spacing"]),
-    ]
+    # gait_generator.py overwrites args.dx/dy/dtheta from its own preset JSON
+    # right after argparse runs, and never reads args.walk_com_height/etc again
+    # after parsing them, so the equivalent --dx/--walk_com_height/etc CLI flags
+    # are silently ignored. Write a preset file per motion instead, since that
+    # loaded file is the only input this generator version actually applies.
+    base_preset_path = (
+        generator_root / "open_duck_reference_motion_generator" / "robots"
+        / "open_duck_mini_v2" / "placo_defaults.json"
+    )
+    base_preset = json.loads(base_preset_path.read_text())
+    presets_dir = artifact_dir / "presets"
+    presets_dir.mkdir(parents=True, exist_ok=True)
     for name, dx, dy, dtheta in MOTION_GRID:
-        command = common + [
-            "--name", f"bdx_inspired_{name}",
-            "--dx", str(dx), "--dy", str(dy), "--dtheta", str(dtheta),
+        preset = dict(base_preset)
+        preset.update({
+            "dx": dx,
+            "dy": dy,
+            "dtheta": dtheta,
+            "walk_com_height": params["walk_com_height"],
+            "walk_foot_height": params["walk_foot_height"],
+            "walk_trunk_pitch": params["walk_trunk_pitch"],
+            "single_support_duration": params["single_support_duration"],
+            "feet_spacing": params["feet_spacing"],
+        })
+        preset_path = presets_dir / f"bdx_inspired_{name}.json"
+        preset_path.write_text(json.dumps(preset, indent=2) + "\n", encoding="utf-8")
+        command = [
+            "uv", "run", str(script), "--duck", "open_duck_mini_v2",
+            "--output_dir", str(recordings), "--length", "10",
+            "--preset", str(preset_path), "--name", f"bdx_inspired_{name}",
         ]
         subprocess.run(command, cwd=generator_root, check=True)
     print(f"Generated {len(MOTION_GRID)} original motions in {recordings}")
