@@ -52,15 +52,23 @@ import pickle
 
 
 class PolyReferenceMotion:
+    """Looks up the recorded reference motion nearest a commanded (dx, dy, dtheta).
+
+    The command grid does not need to be dense: this indexes the flat list of
+    recorded entries by nearest command-space distance, rather than assuming
+    every combination of dx, dy, and dtheta was recorded (that assumption held
+    for the original 6x4x10 auto-generated grid, but not for a hand-picked,
+    human-reviewed set like the eight bdx_inspired motions, which only vary
+    one axis at a time).
+    """
+
     def __init__(self, polynomial_coefficients: str):
         data = pickle.load(open(polynomial_coefficients, "rb"))
         # data = json.load(open(polynomial_coefficients))
         self.dx_range = [0, 0]
         self.dy_range = [0, 0]
         self.dtheta_range = [0, 0]
-        self.dxs = []
-        self.dys = []
-        self.dthetas = []
+        self.command_points = None
         self.data_array = []
         self.period = None
         self.fps = None
@@ -73,7 +81,8 @@ class PolyReferenceMotion:
 
     def process(self, data):
         print("[Poly ref data] Processing ...")
-        _data = {}
+        commands = []
+        entries = []
         for name in data.keys():
             split = name.split("_")
             dx = float(split[0])
@@ -90,15 +99,6 @@ class PolyReferenceMotion:
                 self.start_offset = int(self.startend_double_support_ratio * self.fps)
                 self.nb_steps_in_period = int(self.period * self.fps)
 
-            if dx not in self.dxs:
-                self.dxs.append(dx)
-
-            if dy not in self.dys:
-                self.dys.append(dy)
-
-            if dtheta not in self.dthetas:
-                self.dthetas.append(dtheta)
-
             self.dx_range = [min(dx, self.dx_range[0]), max(dx, self.dx_range[1])]
             self.dy_range = [min(dy, self.dy_range[0]), max(dy, self.dy_range[1])]
             self.dtheta_range = [
@@ -106,65 +106,32 @@ class PolyReferenceMotion:
                 max(dtheta, self.dtheta_range[1]),
             ]
 
-            if dx not in _data:
-                _data[dx] = {}
+            coeffs = [jp.flip(jp.array(v)) for v in data[name]["coefficients"].values()]
+            commands.append((dx, dy, dtheta))
+            entries.append(coeffs)
 
-            if dy not in _data[dx]:
-                _data[dx][dy] = {}
-
-            if dtheta not in _data[dx][dy]:
-                _data[dx][dy][dtheta] = data[name]
-
-            _coeffs = data[name]["coefficients"]
-
-            coeffs = []
-            for k, v in _coeffs.items():
-                coeffs.append(jp.flip(jp.array(v)))
-            _data[dx][dy][dtheta] = coeffs
-
-        # print(self.dtheta_range)
-        # exit()
-
-        self.dxs = sorted(self.dxs)
-        self.dys = sorted(self.dys)
-        self.dthetas = sorted(self.dthetas)
-
-        nb_dx = len(self.dxs)
-        nb_dy = len(self.dys)
-        nb_dtheta = len(self.dthetas)
-
-        self.data_array = nb_dx * [None]
-        for x, dx in enumerate(self.dxs):
-            self.data_array[x] = nb_dy * [None]
-            for y, dy in enumerate(self.dys):
-                self.data_array[x][y] = nb_dtheta * [None]
-                for th, dtheta in enumerate(self.dthetas):
-                    self.data_array[x][y][th] = jp.array(_data[dx][dy][dtheta])
-
-        self.data_array = jp.array(self.data_array)
+        self.command_points = jp.array(commands)
+        self.data_array = jp.array(entries)
 
         print("[Poly ref data] Done processing")
 
     def vel_to_index(self, dx, dy, dtheta):
-
         dx = jp.clip(dx, self.dx_range[0], self.dx_range[1])
         dy = jp.clip(dy, self.dy_range[0], self.dy_range[1])
         dtheta = jp.clip(dtheta, self.dtheta_range[0], self.dtheta_range[1])
 
-        ix = jp.argmin(jp.abs(jp.array(self.dxs) - dx))
-        iy = jp.argmin(jp.abs(jp.array(self.dys) - dy))
-        itheta = jp.argmin(jp.abs(jp.array(self.dthetas) - dtheta))
-
-        return ix, iy, itheta
+        query = jp.array([dx, dy, dtheta])
+        dists = jp.sum((self.command_points - query) ** 2, axis=1)
+        return jp.argmin(dists)
 
     def sample_polynomial(self, t, coeffs):
         return vmap(lambda c: jp.polyval(c, t))(coeffs)
 
     def get_reference_motion(self, dx, dy, dtheta, i):
-        ix, iy, itheta = self.vel_to_index(dx, dy, dtheta)
+        idx = self.vel_to_index(dx, dy, dtheta)
         t = i % self.nb_steps_in_period / self.nb_steps_in_period
         t = jp.clip(t, 0.0, 1.0)  # safeguard
-        ret = self.sample_polynomial(t, self.data_array[ix][iy][itheta])
+        ret = self.sample_polynomial(t, self.data_array[idx])
         return ret
 
 
