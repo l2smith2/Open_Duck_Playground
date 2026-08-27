@@ -40,7 +40,8 @@ class MassGridEvaluator:
             (_body_id(self.model, left), _body_id(self.model, right))
             for left, right in PAIRED_LEG_BODY_NAMES
         )
-        self.upvector_adr = int(self.model.sensor("upvector").adr)
+        # .adr is a length-1 array on this MuJoCo version, not a scalar.
+        self.upvector_adr = int(np.asarray(self.model.sensor("upvector").adr).reshape(-1)[0])
         if not np.isclose(self.nominal_mass[self.trunk_id], 0.698526, atol=0.002):
             raise ValueError("Unexpected nominal trunk mass")
         if not np.isclose(self.nominal_mass[self.head_id], 0.406607, atol=0.002):

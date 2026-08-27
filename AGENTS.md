@@ -70,6 +70,7 @@ debugging output or personal data.
   wheels, broken under WSLg)
 - Randomization audit: scripts/randomization_audit.py
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
+- Push-recovery evaluation: scripts/evaluate_push_recovery.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
 - Pipeline status: scripts/pipeline_status.py

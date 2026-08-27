@@ -334,6 +334,21 @@ The evaluator uses:
 - a 0.10 m/s forward command;
 - the same full COM and other-link envelope.
 
+Push recovery, standing and walking:
+
+    uv run python scripts/evaluate_push_recovery.py --onnx POLICY.onnx --output artifacts/POLICY_push_recovery.json
+
+Training disturbs the floating base every 5-10 s with an instantaneous linear
+x/y velocity delta of 0.1-1.0 m/s in a random horizontal direction, and 10% of
+sampled commands are all-zero, so standing recovery is trained too. This
+evaluator reproduces that disturbance model exactly and sweeps past the trained
+range, reporting for each condition the largest magnitude every episode
+survived and the magnitude where survival first falls below half.
+
+It is diagnostic, not a gate: it exits non-zero only when --require-magnitude
+is given. Rotational and toppling disturbances are out of distribution and are
+deliberately not scored.
+
 Acceptance:
 
 - non-corner cells: at least 18/20 survive;
