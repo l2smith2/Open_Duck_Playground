@@ -72,9 +72,28 @@ debugging output or personal data.
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
+- Pipeline status: scripts/pipeline_status.py
+- Session restore: scripts/restore_artifacts.py
+- Reference install: scripts/install_reference_motion.py
 
 Kaggle artifacts belong under /kaggle/working/artifacts. Always package and
 download them before the session ends.
+
+## Reference motion invariants
+
+- joystick.py loads the imitation reference from a hardcoded repository path,
+  so a fitted reference must be installed there by
+  scripts/install_reference_motion.py, which refuses to install a reference
+  that does not load with the expected number of command entries.
+- Kaggle setup resets the repository to the fetched commit, which discards an
+  installed reference. Reinstall it after any setup rerun; the style-training
+  cell preflights this and fails fast if it is missing.
+- The command grid is deliberately sparse: eight hand-picked motions, one axis
+  varying at a time, so a human can review all of them. Reference lookup must
+  therefore never assume a dense dx/dy/dtheta grid.
+- The upstream generator disables IK joint limits, so generated motions can
+  exceed the robot's real joint range. Re-validate with
+  scripts/replay_bdx_reference.py --check after changing any style parameter.
 
 ## Kaggle setup invariants
 

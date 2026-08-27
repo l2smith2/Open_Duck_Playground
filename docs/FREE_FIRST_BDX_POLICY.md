@@ -141,6 +141,34 @@ Always download the generated ZIP before ending a session.
 
 Official interface reference: https://www.kaggle.com/docs/notebooks
 
+## Resuming after an interrupted session
+
+Kaggle file persistence is best effort, and a fresh notebook import always
+starts with an empty /kaggle/working. To make a session recoverable, upload
+the last artifact ZIP as a private Kaggle Dataset:
+
+    kaggle datasets init -p FOLDER_CONTAINING_THE_ZIP
+    # set title and id in dataset-metadata.json, then:
+    kaggle datasets create -p FOLDER_CONTAINING_THE_ZIP
+
+Attach it to the notebook with Add Input, then run Setup followed by the
+restore/status cell. It calls:
+
+    uv run python scripts/restore_artifacts.py --artifacts /kaggle/working/artifacts
+    uv run python scripts/pipeline_status.py --artifacts /kaggle/working/artifacts
+
+restore_artifacts.py finds the artifact ZIP among the attached inputs and moves
+in anything missing. It never overwrites artifacts that are already present, so
+it is safe to run every session, and it does nothing when no backup is attached.
+
+pipeline_status.py reads the artifact directory and reports which stages are
+genuinely complete, the state of the reference motion, and what to run next.
+Notebook Python state never survives a restart even when files do, so use this
+rather than relying on memory of what ran last session. It also runs locally
+against a downloaded bundle:
+
+    uv run python scripts/pipeline_status.py --artifacts kaggle-outputs/YOUR_BUNDLE
+
 ## Step 4: smoke and benchmark
 
 The notebook first runs:
