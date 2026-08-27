@@ -10,12 +10,13 @@
     "stable upper-body timing"
   ],
   "parameters": {
-    "walk_com_height": 0.24,
-    "walk_foot_height": 0.045,
+    "walk_com_height": 0.21,
+    "walk_foot_height": 0.02,
     "walk_trunk_pitch": -4.0,
     "single_support_duration": 0.18,
-    "feet_spacing": 0.176
+    "feet_spacing": 0.16
   },
+  "joint_limit_note": "Values validated so both knees stay within the model's +/-1.5708 rad range and bend in the natural (positive) direction across all eight motions. The upstream generator disables IK joint limits, so any change here must be re-validated: lowering walk_com_height, lowering feet_spacing, or raising walk_foot_height all increase required knee flexion.",
   "baseline": {
     "walk_com_height": 0.20,
     "walk_foot_height": 0.04,
