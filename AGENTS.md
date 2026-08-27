@@ -91,9 +91,17 @@ download them before the session ends.
 - The command grid is deliberately sparse: eight hand-picked motions, one axis
   varying at a time, so a human can review all of them. Reference lookup must
   therefore never assume a dense dx/dy/dtheta grid.
-- The upstream generator disables IK joint limits, so generated motions can
-  exceed the robot's real joint range. Re-validate with
-  scripts/replay_bdx_reference.py --check after changing any style parameter.
+- The upstream generator disables IK joint limits, and its solver has been
+  observed to land on a different local optimum for a byte-identical preset
+  depending on the machine it runs on (almost certainly floating-point
+  non-associativity from differing CPU/thread counts, tipping a near-boundary
+  solution into an invalid branch). A configuration validated on one machine
+  is therefore not proven safe on another. scripts/prepare_bdx_reference.py
+  generate() checks every motion against the model's joint ranges on
+  whichever machine actually generates it, retrying with a small
+  walk_com_height nudge (up to 5 times) before failing loudly; do not bypass
+  this by calling the upstream generator directly. Re-check manually with
+  scripts/replay_bdx_reference.py --check when inspecting an existing bundle.
 
 ## Kaggle setup invariants
 

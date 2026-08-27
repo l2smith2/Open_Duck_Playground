@@ -7,15 +7,18 @@ viewer this fork already depends on, so review works on any platform that can
 run mujoco_infer.py.
 
     uv run python scripts/replay_bdx_reference.py -f MOTION.json
+    uv run python scripts/replay_bdx_reference.py -f RECORDINGS_DIR --check
 
 Motions play back as recorded joint targets (mj_forward, no physics stepping),
-so joint limits are not enforced by the viewer. Use --check to report whether
-the recording stays inside the model's joint ranges.
+so joint limits are not enforced by the viewer. --check reports whether the
+recording stays inside the model's joint ranges instead of opening the viewer,
+and accepts either one motion file or a directory of them.
 """
 
 import argparse
 import json
 import time
+from pathlib import Path
 
 import mujoco
 import mujoco.viewer
@@ -30,8 +33,20 @@ def xyzw_to_wxyz(quat):
     return [w, x, y, z]
 
 
-def check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices):
-    """Report joint values in the recording that fall outside the model's ranges."""
+def usable_joints(base, motion):
+    """Names/addresses/indices for joints in the recording that exist in this model."""
+    joint_names = motion["Joints"]
+    known = set(base.joint_names)
+    usable = [(i, name) for i, name in enumerate(joint_names) if name in known]
+    skipped = [name for name in joint_names if name not in known]
+    indices = [index for index, _ in usable]
+    addrs = [base.get_joint_addr_from_name(name)[0] for _, name in usable]
+    names = [name for _, name in usable]
+    return names, addrs, indices, skipped
+
+
+def check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices) -> list[str]:
+    """Return one description per joint whose recorded values exceed the model's range."""
     offsets = motion["Frame_offset"][0]
     joints_pos = offsets["joints_pos"]
     problems = []
@@ -46,17 +61,36 @@ def check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices):
                 f"  {name}: recorded [{min(values):+.3f}, {max(values):+.3f}] "
                 f"exceeds model range [{low:+.3f}, {high:+.3f}]"
             )
-    if problems:
-        print("Joint range violations (the robot cannot reach these):")
-        print("\n".join(problems))
-    else:
-        print("All joints stay within the model's declared ranges.")
-    return not problems
+    return problems
+
+
+def check_path(base, path: Path) -> bool:
+    """Check one motion file or every *.json in a directory. Returns overall pass/fail."""
+    files = sorted(path.glob("*.json")) if path.is_dir() else [path]
+    if not files:
+        print(f"No motion files found in {path}")
+        return False
+    all_ok = True
+    for motion_file in files:
+        with open(motion_file, encoding="utf-8") as handle:
+            motion = json.load(handle)
+        joint_names, joint_addrs, joint_indices, skipped = usable_joints(base, motion)
+        problems = check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices)
+        ok = not problems
+        all_ok &= ok
+        status = "OK" if ok else "OVER LIMIT"
+        print(f"{motion_file.name:45s} {status}")
+        for line in problems:
+            print(line)
+    return all_ok
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-f", "--motion_file", type=str, required=True)
+    parser.add_argument(
+        "-f", "--motion_file", type=str, required=True,
+        help="one motion JSON, or (with --check) a directory of them",
+    )
     parser.add_argument("--model_path", type=str, default=DEFAULT_MODEL)
     parser.add_argument("--loops", type=int, default=0, help="0 replays until interrupted")
     parser.add_argument(
@@ -65,33 +99,35 @@ def main():
         help="report joint-range violations and exit without opening the viewer",
     )
     args = parser.parse_args()
+    path = Path(args.motion_file)
 
-    with open(args.motion_file, encoding="utf-8") as handle:
+    base = MJInferBase(args.model_path)
+
+    if args.check:
+        ok = check_path(base, path)
+        raise SystemExit(0 if ok else 1)
+
+    if path.is_dir():
+        raise SystemExit(
+            f"{path} is a directory; pass one motion file with -f to view it "
+            "(only --check accepts a directory)"
+        )
+
+    with open(path, encoding="utf-8") as handle:
         motion = json.load(handle)
 
     joint_names = motion["Joints"]
     offsets = motion["Frame_offset"][0]
     frames = motion["Frames"]
     dt = 1.0 / motion["FPS"]
-
-    base = MJInferBase(args.model_path)
     model, data = base.model, base.data
 
     # Antennas and other joints in the recording may not exist in this model.
-    known = set(base.joint_names)
-    usable = [(i, name) for i, name in enumerate(joint_names) if name in known]
-    skipped = [name for name in joint_names if name not in known]
+    _, joint_addrs, joint_indices, skipped = usable_joints(base, motion)
     if skipped:
         print(f"Skipping joints not present in this model: {skipped}")
-    joint_indices = [index for index, _ in usable]
-    joint_addrs = [base.get_joint_addr_from_name(name)[0] for _, name in usable]
-    usable_names = [name for _, name in usable]
 
-    if args.check:
-        ok = check_joint_ranges(base, motion, usable_names, joint_addrs, joint_indices)
-        raise SystemExit(0 if ok else 1)
-
-    print(f"Replaying {args.motion_file}: {len(frames)} frames at {motion['FPS']} FPS")
+    print(f"Replaying {path}: {len(frames)} frames at {motion['FPS']} FPS")
 
     qpos = data.qpos.copy()
     base_addr = base._floating_base_qpos_addr

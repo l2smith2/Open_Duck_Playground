@@ -26,3 +26,8 @@ dependencies = [
 requires = ["setuptools"]
 [tool.setuptools]
 packages = ["playground"]
+[tool.pytest.ini_options]
+# scripts/ is not an installed package (only "playground" is, see [tool.setuptools]
+# above), so "from scripts import X" only resolves if the repo root is on
+# sys.path. pytest does not add it by default with the current test layout.
+pythonpath = ["."]

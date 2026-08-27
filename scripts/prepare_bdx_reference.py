@@ -39,6 +39,55 @@ def generator_script(generator_root: Path) -> Path:
     return script
 
 
+class JointRangeChecker:
+    """Checks generated motions against this fork's MJCF joint ranges.
+
+    The upstream generator disables IK joint limits (enable_joint_limits(False)
+    in placo_walk_engine.py), and its solver has been observed to land on a
+    different local optimum for byte-identical input depending on the machine
+    it runs on -- almost certainly floating-point non-associativity in its
+    numerical solver (thread count / CPU features affecting summation order)
+    tipping a near-boundary solution into an invalid branch. A configuration
+    validated on one machine is therefore not proven safe on another; this
+    must run on whichever machine actually generated the motions.
+
+    Loads the MuJoCo model once and reuses it, since generate() may check the
+    same motion repeatedly across retries.
+    """
+
+    def __init__(self):
+        from playground.open_duck_mini_v2.mujoco_infer_base import MJInferBase
+
+        self.base = MJInferBase("playground/open_duck_mini_v2/xmls/scene_flat_terrain.xml")
+        self.known = set(self.base.joint_names)
+
+    def check_file(self, motion_file: Path) -> list[str]:
+        """One description per joint whose recorded values exceed its range."""
+        motion = json.loads(motion_file.read_text(encoding="utf-8"))
+        joint_names = motion["Joints"]
+        offsets = motion["Frame_offset"][0]
+        problems = []
+        for i, name in enumerate(joint_names):
+            if name not in self.known:
+                continue  # e.g. antennas: recorded but not in this MJCF
+            joint_id = self.base.get_joint_id_from_name(name)
+            low, high = self.base.model.jnt_range[joint_id]
+            values = [frame[offsets["joints_pos"] + i] for frame in motion["Frames"]]
+            if min(values) < low or max(values) > high:
+                problems.append(
+                    f"  {motion_file.name}: {name} recorded "
+                    f"[{min(values):+.3f}, {max(values):+.3f}] "
+                    f"exceeds model range [{low:+.3f}, {high:+.3f}]"
+                )
+        return problems
+
+    def check_dir(self, recordings_dir: Path) -> list[str]:
+        problems = []
+        for motion_file in sorted(recordings_dir.glob("*.json")):
+            problems.extend(self.check_file(motion_file))
+        return problems
+
+
 def generate(generator_root: Path, artifact_dir: Path) -> None:
     script = generator_script(generator_root)
     params = load_style()["parameters"]
@@ -59,14 +108,13 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
     base_preset = json.loads(base_preset_path.read_text())
     presets_dir = artifact_dir / "presets"
     presets_dir.mkdir(parents=True, exist_ok=True)
-    motion_grid_record = {}
-    for name, dx, dy, dtheta in MOTION_GRID:
+    def generate_one(name, dx, dy, dtheta, com_height_offset=0.0):
         preset = dict(base_preset)
         preset.update({
             "dx": dx,
             "dy": dy,
             "dtheta": dtheta,
-            "walk_com_height": params["walk_com_height"],
+            "walk_com_height": params["walk_com_height"] + com_height_offset,
             "walk_foot_height": params["walk_foot_height"],
             "walk_trunk_pitch": params["walk_trunk_pitch"],
             "single_support_duration": params["single_support_duration"],
@@ -94,7 +142,38 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
             raise RuntimeError(
                 f"Expected exactly one recording for {name!r}; found {[m.name for m in matches]}"
             )
-        motion_grid_record[matches[0].name] = {"dx": dx, "dy": dy, "dtheta": dtheta}
+        return matches[0]
+
+    checker = JointRangeChecker()
+    motion_grid_record = {}
+    max_retries = 5
+    for name, dx, dy, dtheta in MOTION_GRID:
+        recording = generate_one(name, dx, dy, dtheta)
+        # The upstream IK solver disables joint limits and, for parameters
+        # near a solution boundary, has been observed to land on a different
+        # (invalid) branch depending on the machine it runs on, even for a
+        # byte-identical preset. A config validated elsewhere is therefore
+        # not proven safe here. Retry this one motion with a tiny, visually
+        # negligible nudge to walk_com_height to try to land on the valid
+        # branch, rather than silently shipping an unreachable motion. Every
+        # generated candidate is checked, including the last retry.
+        problems = checker.check_file(recording)
+        attempt = 0
+        while problems and attempt < max_retries:
+            attempt += 1
+            offset = 0.001 * attempt
+            print(f"{name}: joint-range violation, retrying with com_height offset {offset:+.4f}")
+            for line in problems:
+                print(line)
+            recording.unlink()
+            recording = generate_one(name, dx, dy, dtheta, com_height_offset=offset)
+            problems = checker.check_file(recording)
+        if problems:
+            raise RuntimeError(
+                f"{name}: joint-range violation persisted after {attempt} retries; "
+                "walk_com_height, walk_foot_height, or feet_spacing needs a real change, not a nudge"
+            )
+        motion_grid_record[recording.name] = {"dx": dx, "dy": dy, "dtheta": dtheta}
     (artifact_dir / "motion_grid.json").write_text(
         json.dumps(motion_grid_record, indent=2) + "\n", encoding="utf-8"
     )

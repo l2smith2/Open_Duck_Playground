@@ -251,12 +251,22 @@ It generates eight motions covering standing, forward/backward, sideways, and tu
 These values are tuned to keep both knees inside the model's joint range and
 bending in the natural direction (see the joint_limit_note in
 configs/bdx_inspired_reference.json). The upstream gait generator disables
-its own IK joint limits, so it will silently emit unreachable poses if these
-parameters drift: lowering walk_com_height, lowering feet_spacing, or
-raising walk_foot_height all increase required knee flexion. Re-validate
-with --check (below) after changing any of them.
+its own IK joint limits, and its solver has been observed to land on a
+different local optimum for a byte-identical preset depending on the machine
+it runs on -- almost certainly floating-point non-associativity (differing
+CPU/thread counts changing summation order) tipping a near-boundary solution
+into an invalid branch. A configuration proven safe on one machine is
+therefore not proven safe on another.
 
-Replay each generated JSON locally:
+Because of that, generate() checks every generated motion against every
+joint's real range on whichever machine actually generated it (not just the
+knees: any joint), and retries with a small walk_com_height nudge, up to 5
+times, before failing loudly. This runs automatically as part of the command
+above; a persistent failure means the style parameters need a real change,
+not a retry, and the error message says so.
+
+Replay each generated JSON locally to check the style, not the joint limits
+(those are already checked automatically):
 
     uv run python scripts/replay_bdx_reference.py -f MOTION.json
 
@@ -265,10 +275,10 @@ FramesViewer/placo, which ships no Windows wheels and hits a GLX threading
 error under WSLg, so it does not work on this platform. This fork's
 replay_bdx_reference.py plays the same recorded JSON back in the MuJoCo
 viewer this project already depends on, on any platform that can run
-mujoco_infer.py. Add --check to report joint-range violations without
-opening a viewer window:
+mujoco_infer.py. -f also accepts a directory with --check, to manually
+re-verify an existing bundle without opening a viewer window:
 
-    uv run python scripts/replay_bdx_reference.py -f MOTION.json --check
+    uv run python scripts/replay_bdx_reference.py -f RECORDINGS_DIR --check
 
 Look for:
 
