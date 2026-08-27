@@ -280,6 +280,9 @@ re-verify an existing bundle without opening a viewer window:
 
     uv run python scripts/replay_bdx_reference.py -f RECORDINGS_DIR --check
 
+That also prints a bundle fingerprint: a content hash of the exact motions you
+are about to watch. Keep it; approval below is bound to it.
+
 Look for:
 
 1. waddle;
@@ -288,9 +291,16 @@ Look for:
 4. deliberate foot lift;
 5. stable upper-body timing.
 
-Record approval only after inspection:
+Record approval only after inspection, passing the fingerprint the check
+printed for the bundle you actually watched:
 
-    uv run python scripts/prepare_bdx_reference.py approve --generator-root PATH_TO_GENERATOR --artifact-dir artifacts/bdx_reference --review-note "Replayed all eight motions and checked all five traits."
+    uv run python scripts/prepare_bdx_reference.py approve --generator-root PATH_TO_GENERATOR --artifact-dir artifacts/bdx_reference --review-note "Replayed all eight motions and checked all five traits." --expect-fingerprint FINGERPRINT
+
+Because the upstream solver can produce different motions from identical input
+on a different machine, approve refuses a bundle whose fingerprint does not
+match: a regenerated bundle cannot inherit the approval of one you reviewed.
+For the same reason the notebook keeps generation and approval in separate
+cells, so rerunning the approval step can never regenerate the motions.
 
 Fit and copy only after approval:
 

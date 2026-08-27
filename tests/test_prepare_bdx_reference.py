@@ -94,3 +94,35 @@ def test_generate_succeeds_on_final_retry_without_extra_unchecked_generation(tmp
     pbr.generate(generator_root, artifact_dir)  # must not raise
 
     assert len(checker.calls) == 6
+
+
+def _make_bundle(tmp_path, count=8):
+    recordings = tmp_path / "recordings"
+    recordings.mkdir(parents=True)
+    for index in range(count):
+        (recordings / f"motion_{index}.json").write_text(f'{{"n": {index}}}')
+    return tmp_path
+
+
+def test_approve_accepts_the_fingerprint_that_was_reviewed(tmp_path):
+    artifact_dir = _make_bundle(tmp_path)
+    fingerprint = pbr.bundle_fingerprint(artifact_dir / "recordings")
+
+    pbr.approve(artifact_dir, "Replayed all eight motions", fingerprint)
+
+    marker = json.loads((artifact_dir / "reference_review_approved.json").read_text())
+    assert marker["approved"] is True
+    assert marker["fingerprint"] == fingerprint
+
+
+def test_approve_refuses_a_bundle_that_was_not_the_one_reviewed(tmp_path):
+    # Regenerating produces different motion data; approval must not carry over.
+    artifact_dir = _make_bundle(tmp_path)
+    stale = pbr.bundle_fingerprint(artifact_dir / "recordings")
+    (artifact_dir / "recordings" / "motion_0.json").write_text('{"n": 999}')
+    assert pbr.bundle_fingerprint(artifact_dir / "recordings") != stale
+
+    with pytest.raises(RuntimeError, match="not the ones you watched"):
+        pbr.approve(artifact_dir, "Replayed all eight motions", stale)
+
+    assert not (artifact_dir / "reference_review_approved.json").exists()

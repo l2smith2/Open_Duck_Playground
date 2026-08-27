@@ -102,6 +102,11 @@ download them before the session ends.
   walk_com_height nudge (up to 5 times) before failing loudly; do not bypass
   this by calling the upstream generator directly. Re-check manually with
   scripts/replay_bdx_reference.py --check when inspecting an existing bundle.
+- Because the same input can regenerate into different motions, the human
+  review gate is bound to content, not to a path: generate() and --check both
+  print a bundle fingerprint, and approve --expect-fingerprint refuses a bundle
+  that is not the one that was reviewed. Keep generation and approval in
+  separate notebook cells so approving can never regenerate.
 
 ## Kaggle setup invariants
 

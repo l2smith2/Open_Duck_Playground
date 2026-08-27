@@ -1,6 +1,7 @@
 """Generate, review-gate, and fit an original BDX-inspired reference motion."""
 
 import argparse
+import hashlib
 import json
 import pickle
 import shutil
@@ -26,6 +27,22 @@ def _is_float(value: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def bundle_fingerprint(recordings_dir: Path) -> str:
+    """Content hash of a recordings directory, stable across machines and transfers.
+
+    The human review gate approves *specific* motion data. Because the upstream
+    solver is not reproducible across machines (see JointRangeChecker), and
+    because generate() may nudge parameters on retry, a regenerated bundle can
+    differ from the one a human actually watched. Approval must therefore be
+    bound to content, not to a directory path.
+    """
+    digest = hashlib.sha256()
+    for path in sorted(recordings_dir.glob("*.json"), key=lambda item: item.name):
+        digest.update(path.name.encode("utf-8"))
+        digest.update(path.read_bytes())
+    return digest.hexdigest()[:16]
 
 
 def load_style() -> dict:
@@ -178,26 +195,37 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
         json.dumps(motion_grid_record, indent=2) + "\n", encoding="utf-8"
     )
     print(f"Generated {len(MOTION_GRID)} original motions in {recordings}")
+    print(f"Bundle fingerprint: {bundle_fingerprint(recordings)}")
     print("Replay/inspect them, then run this script with the approve command.")
 
 
-def approve(artifact_dir: Path, review_note: str) -> None:
-    recordings = sorted((artifact_dir / "recordings").glob("*.json"))
+def approve(artifact_dir: Path, review_note: str, expect_fingerprint: str = "") -> None:
+    recordings_dir = artifact_dir / "recordings"
+    recordings = sorted(recordings_dir.glob("*.json"))
     if len(recordings) != len(MOTION_GRID):
         raise RuntimeError(
             f"Expected {len(MOTION_GRID)} generated motions; found {len(recordings)}"
         )
     if len(review_note.strip()) < 8:
         raise ValueError("Give a short review note describing what you inspected")
+    fingerprint = bundle_fingerprint(recordings_dir)
+    if expect_fingerprint and expect_fingerprint != fingerprint:
+        raise RuntimeError(
+            f"Refusing to approve: this bundle is {fingerprint}, but you reviewed "
+            f"{expect_fingerprint}. The motions here are not the ones you watched "
+            "-- most likely they were regenerated since. Re-download, re-review, "
+            "and approve with the fingerprint the replay check prints."
+        )
     marker = {
         "approved": True,
         "review_note": review_note.strip(),
+        "fingerprint": fingerprint,
         "files": [path.name for path in recordings],
     }
     (artifact_dir / "reference_review_approved.json").write_text(
         json.dumps(marker, indent=2) + "\n", encoding="utf-8"
     )
-    print("Review approval recorded. The reference is now eligible for fitting.")
+    print(f"Review approval recorded for bundle {fingerprint}. Eligible for fitting.")
 
 
 def _fit_poly_mangled_key(recording_filename: str) -> str:
@@ -274,6 +302,10 @@ def main() -> None:
     parser.add_argument("--generator-root", type=Path, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--review-note", default="")
+    parser.add_argument(
+        "--expect-fingerprint", default="",
+        help="bundle fingerprint printed by the replay check; approval fails if it differs",
+    )
     parser.add_argument("--playground-data", type=Path)
     args = parser.parse_args()
     generator_root = args.generator_root.resolve()
@@ -282,7 +314,7 @@ def main() -> None:
     if args.command == "generate":
         generate(generator_root, artifact_dir)
     elif args.command == "approve":
-        approve(artifact_dir, args.review_note)
+        approve(artifact_dir, args.review_note, args.expect_fingerprint)
     else:
         fit(generator_root, artifact_dir, args.playground_data)
 

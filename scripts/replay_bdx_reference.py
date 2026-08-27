@@ -17,13 +17,17 @@ and accepts either one motion file or a directory of them.
 
 import argparse
 import json
+import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parents[1]))
 
 import mujoco
 import mujoco.viewer
 
 from playground.open_duck_mini_v2.mujoco_infer_base import MJInferBase
+from scripts.prepare_bdx_reference import bundle_fingerprint
 
 DEFAULT_MODEL = "playground/open_duck_mini_v2/xmls/scene_flat_terrain.xml"
 
@@ -82,6 +86,10 @@ def check_path(base, path: Path) -> bool:
         print(f"{motion_file.name:45s} {status}")
         for line in problems:
             print(line)
+    if path.is_dir() and all_ok:
+        # Approval is bound to this hash so a regenerated bundle cannot be
+        # approved on the strength of a review of different motions.
+        print(f"\nBundle fingerprint: {bundle_fingerprint(path)}")
     return all_ok
 
 
