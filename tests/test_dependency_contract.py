@@ -15,11 +15,20 @@ EXPECTED_STACK = {
 }
 
 
+def _base_dependency(spec: str) -> str:
+    """Strip a PEP 508 environment marker (e.g. "; sys_platform == 'linux'")."""
+    return spec.split(";")[0].strip()
+
+
 def test_training_dependencies_and_lockfile_match():
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    dependencies = set(project["project"]["dependencies"])
+    dependencies = {_base_dependency(d) for d in project["project"]["dependencies"]}
     assert "brax==0.13.0" in dependencies
+    # jax[cuda12] is Linux/Kaggle-only (no Windows wheels for the cuda12
+    # extra); plain jax covers local Windows development. Both must pin the
+    # same version as the training stack.
     assert "jax[cuda12]==0.6.2" in dependencies
+    assert "jax==0.6.2" in dependencies
     assert "jaxlib==0.6.2" in dependencies
     assert "mujoco==3.3.3" in dependencies
     assert "mujoco-mjx==3.3.3" in dependencies
