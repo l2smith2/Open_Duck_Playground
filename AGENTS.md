@@ -89,6 +89,15 @@ download them before the session ends.
 - Kaggle setup resets the repository to the fetched commit, which discards an
   installed reference. Reinstall it after any setup rerun; the style-training
   cell preflights this and fails fast if it is missing.
+- The upstream generator does not honour the requested dx/dy/dtheta: it emits a
+  gait roughly 4.4x faster and encodes the achieved velocity in the output
+  filename. A reference keyed by the requested command makes the imitation
+  reward demand a fast gait while velocity tracking demands a slow one, and
+  policies trained against that contradiction stop walking while staying
+  upright. generate() therefore keys motion_grid.json by the velocity measured
+  from each recording's root trajectory, never by the request. Use the rekey
+  command to repair a bundle fitted before this; it preserves the approved
+  motions, and any stage trained against the old keys must be retrained.
 - The command grid is deliberately sparse: eight hand-picked motions, one axis
   varying at a time, so a human can review all of them. Reference lookup must
   therefore never assume a dense dx/dy/dtheta grid.

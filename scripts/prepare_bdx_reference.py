@@ -3,6 +3,8 @@
 import argparse
 import hashlib
 import json
+import math
+import numpy as np
 import pickle
 import shutil
 import subprocess
@@ -43,6 +45,67 @@ def bundle_fingerprint(recordings_dir: Path) -> str:
         digest.update(path.name.encode("utf-8"))
         digest.update(path.read_bytes())
     return digest.hexdigest()[:16]
+
+
+def measured_velocity(recording: Path) -> dict:
+    """The velocity a recorded motion actually travels at, from its root trajectory.
+
+    The upstream generator does not honour the requested dx/dy/dtheta: it
+    produces a gait roughly 4.4x faster and encodes the achieved velocity in
+    the output filename. Keying the reference by the *requested* command makes
+    the imitation reward demand a fast gait while the velocity-tracking reward
+    demands a slow one, and a policy trained against that contradiction stops
+    walking. The command a motion is filed under must therefore be what the
+    motion actually does, measured here rather than trusted from the request.
+    """
+    motion = json.loads(recording.read_text(encoding="utf-8"))
+    offsets = motion["Frame_offset"][0]
+    frames = motion["Frames"]
+    fps = motion["FPS"]
+    root_pos = offsets["root_pos"]
+    root_quat = offsets["root_quat"]
+
+    yaws = []
+    for frame in frames:
+        x, y, z, w = frame[root_quat:root_quat + 4]
+        yaws.append(math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z)))
+    # Turning motions pass through more than one revolution over a recording,
+    # so per-frame yaw has to be unwrapped before it can be differentiated.
+    unwrapped = [yaws[0]]
+    for previous, current in zip(yaws, yaws[1:]):
+        delta = current - previous
+        while delta > math.pi:
+            delta -= 2.0 * math.pi
+        while delta < -math.pi:
+            delta += 2.0 * math.pi
+        unwrapped.append(unwrapped[-1] + delta)
+
+    # Fit the slope over the middle of the recording: the generator brackets
+    # every motion with a double-support settling phase whose transient would
+    # otherwise bias an endpoint-to-endpoint estimate.
+    count = len(frames)
+    low = int(0.15 * count)
+    high = int(0.85 * count)
+    if high - low < 2:
+        raise ValueError(f"{recording.name}: too few frames to measure a velocity")
+    times = np.arange(low, high) / fps
+    series = {
+        "dx": np.array([frame[root_pos] for frame in frames[low:high]]),
+        "dy": np.array([frame[root_pos + 1] for frame in frames[low:high]]),
+        "dtheta": np.array(unwrapped[low:high]),
+    }
+    return {
+        axis: round(float(np.polyfit(times, values, 1)[0]), 4)
+        for axis, values in series.items()
+    }
+
+
+def build_motion_grid(recordings_dir: Path) -> dict:
+    """Map every recording to the command it actually realises."""
+    return {
+        recording.name: measured_velocity(recording)
+        for recording in sorted(recordings_dir.glob("*.json"), key=lambda item: item.name)
+    }
 
 
 def load_style() -> dict:
@@ -190,7 +253,12 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
                 f"{name}: joint-range violation persisted after {attempt} retries; "
                 "walk_com_height, walk_foot_height, or feet_spacing needs a real change, not a nudge"
             )
-        motion_grid_record[recording.name] = {"dx": dx, "dy": dy, "dtheta": dtheta}
+        measured = measured_velocity(recording)
+        print(
+            f"{name}: requested (dx={dx}, dy={dy}, dtheta={dtheta}) -> "
+            f"measured (dx={measured['dx']}, dy={measured['dy']}, dtheta={measured['dtheta']})"
+        )
+        motion_grid_record[recording.name] = measured
     (artifact_dir / "motion_grid.json").write_text(
         json.dumps(motion_grid_record, indent=2) + "\n", encoding="utf-8"
     )
@@ -242,6 +310,63 @@ def _fit_poly_mangled_key(recording_filename: str) -> str:
     stem = recording_filename.strip(".json")
     tmp = stem.split("_")
     return f"{tmp[1]}_{tmp[2]}_{tmp[3]}"
+
+
+def rekey(artifact_dir: Path, playground_data: Path | None) -> None:
+    """Re-file an already-fitted reference under the velocities its motions realise.
+
+    Bundles fitted before generate() measured velocities are keyed by the
+    requested command, which the generator does not honour. Only the keys are
+    wrong -- the motion data is the data a human approved -- so re-keying
+    repairs the reference without regenerating, which would produce different
+    motions (the solver is not reproducible across machines) and would
+    invalidate that approval.
+    """
+    recordings_dir = artifact_dir / "recordings"
+    coefficients_path = artifact_dir / "polynomial_coefficients.pkl"
+    motion_grid_path = artifact_dir / "motion_grid.json"
+    for required in (recordings_dir, coefficients_path, motion_grid_path):
+        if not required.exists():
+            raise RuntimeError(f"Nothing to re-key: {required} is missing")
+
+    old_grid = json.loads(motion_grid_path.read_text(encoding="utf-8"))
+    new_grid = build_motion_grid(recordings_dir)
+    if set(old_grid) != set(new_grid):
+        raise RuntimeError(
+            "Recordings do not match motion_grid.json; re-run generate rather than re-keying"
+        )
+
+    with open(coefficients_path, "rb") as handle:
+        coefficients = pickle.load(handle)
+
+    remapped = {}
+    for filename, measured in new_grid.items():
+        previous = old_grid[filename]
+        old_key = f"{previous['dx']}_{previous['dy']}_{previous['dtheta']}"
+        if old_key not in coefficients:
+            raise RuntimeError(
+                f"Fitted reference has no key {old_key!r} for {filename!r}; "
+                f"available keys: {sorted(coefficients.keys())}"
+            )
+        new_key = f"{measured['dx']}_{measured['dy']}_{measured['dtheta']}"
+        if new_key in remapped:
+            raise RuntimeError(
+                f"Two motions measure the same velocity {new_key!r}; the command grid is degenerate"
+            )
+        remapped[new_key] = coefficients.pop(old_key)
+        print(f"{filename}: {old_key} -> {new_key}")
+    if coefficients:
+        raise RuntimeError(f"Unmapped keys left in the fitted reference: {sorted(coefficients.keys())}")
+
+    motion_grid_path.write_text(json.dumps(new_grid, indent=2) + chr(10), encoding="utf-8")
+    with open(coefficients_path, "wb") as handle:
+        pickle.dump(remapped, handle)
+    print(f"Re-keyed {len(remapped)} motions in {coefficients_path}")
+    if playground_data:
+        destination = playground_data / "polynomial_coefficients.pkl"
+        shutil.copy2(coefficients_path, destination)
+        print(f"Copied to {destination}")
+    print("Any policy trained against the old keys is invalid; retrain those stages.")
 
 
 def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) -> None:
@@ -298,8 +423,9 @@ def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("generate", "approve", "fit"))
-    parser.add_argument("--generator-root", type=Path, required=True)
+    parser.add_argument("command", choices=("generate", "approve", "fit", "rekey"))
+    # rekey works entirely from an existing bundle, so it needs no generator.
+    parser.add_argument("--generator-root", type=Path)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--review-note", default="")
     parser.add_argument(
@@ -308,15 +434,18 @@ def main() -> None:
     )
     parser.add_argument("--playground-data", type=Path)
     args = parser.parse_args()
-    generator_root = args.generator_root.resolve()
+    if args.command in ("generate", "fit") and args.generator_root is None:
+        parser.error(f"--generator-root is required for {args.command}")
     artifact_dir = args.artifact_dir.resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
     if args.command == "generate":
-        generate(generator_root, artifact_dir)
+        generate(args.generator_root.resolve(), artifact_dir)
     elif args.command == "approve":
         approve(artifact_dir, args.review_note, args.expect_fingerprint)
+    elif args.command == "rekey":
+        rekey(artifact_dir, args.playground_data)
     else:
-        fit(generator_root, artifact_dir, args.playground_data)
+        fit(args.generator_root.resolve(), artifact_dir, args.playground_data)
 
 
 if __name__ == "__main__":

@@ -37,6 +37,25 @@ class FakeChecker:
         return []
 
 
+# The generator does not honour the requested velocity; it produces a faster
+# gait and names the file after what it achieved. Fakes reproduce that so the
+# tests exercise the real relationship between request and result.
+GENERATOR_SPEEDUP = 4.4
+
+
+def _write_fake_motion(path, dx, dy, fps=50, count=100):
+    frames = []
+    for index in range(count):
+        seconds = index / fps
+        frames.append([dx * seconds, dy * seconds, 0.2, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+    path.write_text(json.dumps({
+        "FPS": fps,
+        "Frame_offset": [{"root_pos": 0, "root_quat": 3, "joints_pos": 7}],
+        "Joints": ["a", "b"],
+        "Frames": frames,
+    }))
+
+
 def _patch_generation(monkeypatch, artifact_dir, checker):
     """Make generate_one's subprocess call a no-op that writes the expected output file."""
 
@@ -46,8 +65,10 @@ def _patch_generation(monkeypatch, artifact_dir, checker):
         name = command[command.index("--name") + 1]
         preset_path = command[command.index("--preset") + 1]
         preset = json.loads(open(preset_path).read())
+        achieved_dx = preset["dx"] * GENERATOR_SPEEDUP
+        achieved_dy = preset["dy"] * GENERATOR_SPEEDUP
         out = output_dir / f"{name}_{preset['dx']}_{preset['dy']}_{preset['dtheta']}.json"
-        out.write_text("{}")
+        _write_fake_motion(out, achieved_dx, achieved_dy)
         return None
 
     monkeypatch.setattr(pbr.subprocess, "run", fake_run)
@@ -126,3 +147,48 @@ def test_approve_refuses_a_bundle_that_was_not_the_one_reviewed(tmp_path):
         pbr.approve(artifact_dir, "Replayed all eight motions", stale)
 
     assert not (artifact_dir / "reference_review_approved.json").exists()
+
+
+def test_generate_keys_motions_by_measured_velocity_not_requested(tmp_path, monkeypatch):
+    # Regression test: keying by the requested command made the imitation
+    # reward demand a gait 4.4x faster than the velocity-tracking reward, and
+    # policies trained against that contradiction stopped walking entirely.
+    generator_root = _make_generator_root(tmp_path)
+    artifact_dir = tmp_path / "artifact"
+    monkeypatch.setattr(pbr, "MOTION_GRID", (("forward", 0.04, 0.0, 0.0),))
+    _patch_generation(monkeypatch, artifact_dir, FakeChecker({}))
+
+    pbr.generate(generator_root, artifact_dir)
+
+    grid = json.loads((artifact_dir / "motion_grid.json").read_text())
+    entry = next(iter(grid.values()))
+    assert entry["dx"] == pytest.approx(0.04 * GENERATOR_SPEEDUP, abs=1e-3)
+    assert entry["dx"] != pytest.approx(0.04, abs=1e-3)
+
+
+def test_rekey_refiles_an_existing_bundle_without_touching_the_motions(tmp_path, monkeypatch):
+    generator_root = _make_generator_root(tmp_path)
+    artifact_dir = tmp_path / "artifact"
+    monkeypatch.setattr(pbr, "MOTION_GRID", (("forward", 0.04, 0.0, 0.0),))
+    _patch_generation(monkeypatch, artifact_dir, FakeChecker({}))
+    pbr.generate(generator_root, artifact_dir)
+
+    recordings = sorted((artifact_dir / "recordings").glob("*.json"))
+    before = pbr.bundle_fingerprint(artifact_dir / "recordings")
+
+    # Simulate a bundle fitted under the old, requested-command keys.
+    stale = {recordings[0].name: {"dx": 0.04, "dy": 0.0, "dtheta": 0.0}}
+    (artifact_dir / "motion_grid.json").write_text(json.dumps(stale))
+    import pickle
+    with open(artifact_dir / "polynomial_coefficients.pkl", "wb") as handle:
+        pickle.dump({"0.04_0.0_0.0": "coefficients"}, handle)
+
+    pbr.rekey(artifact_dir, None)
+
+    with open(artifact_dir / "polynomial_coefficients.pkl", "rb") as handle:
+        rekeyed = pickle.load(handle)
+    (key,) = rekeyed
+    assert rekeyed[key] == "coefficients"
+    assert float(key.split("_")[0]) == pytest.approx(0.04 * GENERATOR_SPEEDUP, abs=1e-3)
+    # The approved motion data itself must be untouched.
+    assert pbr.bundle_fingerprint(artifact_dir / "recordings") == before

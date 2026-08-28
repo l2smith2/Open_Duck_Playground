@@ -308,6 +308,17 @@ Fit and copy only after approval:
 
 The fit command refuses to run without the approval record.
 
+Motions are filed under the velocity they actually realise, measured from each
+recording's root trajectory, because the generator does not honour the
+requested dx/dy/dtheta. To repair a bundle fitted before that was true, without
+regenerating and losing its approval:
+
+    uv run python scripts/prepare_bdx_reference.py rekey --artifact-dir artifacts/bdx_reference
+
+Re-install the reference afterwards, and retrain every stage that used the old
+keys: a policy trained against a mislabelled reference is not recoverable by
+fine-tuning.
+
 ## Step 8: style fine-tuning
 
 1. Start seeds 201, 202, and 203 from the accepted 300M neutral checkpoint.
