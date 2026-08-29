@@ -76,7 +76,9 @@ def main() -> None:
         # style seeds 201/202/203 when a 0.432 s reference replaced a 0.540 s one.
         if TRAINING_REFERENCE.is_file() and not args.allow_cadence_change:
             _, installed_period = verify(TRAINING_REFERENCE, None)
-            if abs(installed_period - period) > 1e-6:
+            # 5 ms absorbs float noise and the generator's timestep quantisation
+            # while still catching the 108 ms error that stopped the first seeds.
+            if abs(installed_period - period) > 0.005:
                 raise SystemExit(
                     f"Refusing to install: {source} has a stride period of {period:.3f}s, "
                     f"but the reference already installed has {installed_period:.3f}s. Any "
