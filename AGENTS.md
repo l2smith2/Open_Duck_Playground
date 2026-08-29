@@ -70,6 +70,8 @@ debugging output or personal data.
   wheels, broken under WSLg)
 - Randomization audit: scripts/randomization_audit.py
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
+- Reference locomotion-incentive gate:
+  scripts/check_reference_locomotion_incentive.py
 - Push-recovery evaluation: scripts/evaluate_push_recovery.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
@@ -98,6 +100,19 @@ download them before the session ends.
   from each recording's root trajectory, never by the request. Use the rekey
   command to repair a bundle fitted before this; it preserves the approved
   motions, and any stage trained against the old keys must be retrained.
+- A reference must reward walking more than marching in place, and this is a
+  property of the reference, not of training. The imitation reward is dominated
+  by joint_pos, an unbounded quadratic on joint angles, plus a foot-contact
+  match; both are satisfied by cycling the legs on the spot. When a reference's
+  fore-aft leg swing is small next to its lateral sway, marching in place scores
+  higher than walking, and fine-tuning reliably finds that optimum with no
+  gradient path out. Two style attempts failed this way, each surviving every
+  mass-grid cell at 0.002 m/s against a 0.10 m/s command. Gate every candidate
+  reference with scripts/check_reference_locomotion_incentive.py before spending
+  GPU on it; it scores a known-walking and a known-collapsed policy against the
+  candidate and passes only when walking wins. walk_foot_height is the strongest
+  lever on fore-aft swing, and lowering walk_com_height also helps. Do not read
+  "deliberate foot lift" as a reason to reduce walk_foot_height.
 - A fine-tune inherits its restore checkpoint's gait cadence and cannot retime.
   The imitation reward's joint_pos term is an unbounded quadratic on joint
   angles, so a policy whose stride cannot phase-lock to the reference clock

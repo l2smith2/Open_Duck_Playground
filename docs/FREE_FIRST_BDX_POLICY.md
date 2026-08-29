@@ -248,6 +248,26 @@ It generates eight motions covering standing, forward/backward, sideways, and tu
 - single_support_duration 0.225;
 - feet_spacing 0.16.
 
+Before spending GPU on a candidate reference, prove it rewards walking more
+than marching in place:
+
+    uv run python scripts/check_reference_locomotion_incentive.py \
+        --reference artifacts/bdx_reference/polynomial_coefficients.pkl \
+        --walking-onnx NEUTRAL.onnx --marching-onnx COLLAPSED_STYLE.onnx \
+        --output artifacts/bdx_reference/locomotion_incentive.json
+
+The imitation reward is dominated by joint_pos, an unbounded quadratic on joint
+angles, plus a foot-contact match. Both are satisfied by cycling the legs on the
+spot. If a reference's fore-aft leg swing is small next to its lateral sway,
+marching in place scores higher than walking, and 30M steps of fine-tuning
+reliably find that optimum with no gradient path out. Two style attempts failed
+exactly this way, each surviving every mass-grid cell at 0.002 m/s against a
+0.10 m/s command, so mass-grid survival does not detect it.
+
+walk_foot_height is the strongest lever on fore-aft swing; lowering
+walk_com_height also helps. Do not read "deliberate foot lift" as a reason to
+reduce walk_foot_height: halving it to 0.02 is what flattened the leg swing.
+
 single_support_duration is not a style dial. It sets the stride period exactly,
 as period = 2.4 * single_support_duration, and 0.225 is the value that keeps the
 0.540 s period the neutral checkpoint is trained on.
