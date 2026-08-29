@@ -136,6 +136,10 @@ download them before the session ends.
   artifact ZIPs before a session ends.
 - File persistence may restore .venv without a usable executable or symlink.
   Setup must recreate only .venv with uv venv --clear in that condition.
+- Every notebook code cell starts with a "# ==== CELL N: name ====" header,
+  numbered in run order. Keep the numbering contiguous and update it when
+  cells are added, removed, or reordered, and refer to cells by that number in
+  guides and in conversation so instructions are unambiguous.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
 - A notebook cell must never depend on a Python variable defined by an earlier
