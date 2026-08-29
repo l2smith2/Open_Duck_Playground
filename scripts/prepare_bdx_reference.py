@@ -369,10 +369,8 @@ def rekey(artifact_dir: Path, playground_data: Path | None) -> None:
     print("Any policy trained against the old keys is invalid; retrain those stages.")
 
 
-def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) -> None:
-    approval = artifact_dir / "reference_review_approved.json"
-    if not approval.is_file():
-        raise RuntimeError("Inspect and approve the generated reference before fitting it")
+def _fit_and_remap(generator_root: Path, artifact_dir: Path) -> dict:
+    """Run the upstream polynomial fit and re-file its output under dx_dy_dtheta keys."""
     motion_grid_path = artifact_dir / "motion_grid.json"
     if not motion_grid_path.is_file():
         raise RuntimeError("motion_grid.json missing; re-run generate before fitting")
@@ -410,7 +408,36 @@ def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) 
         remapped[correct_key] = coefficients.pop(mangled_key)
     if coefficients:
         raise RuntimeError(f"Unmapped keys left in fit_poly.py output: {sorted(coefficients.keys())}")
+    return remapped
 
+
+def screen(generator_root: Path, artifact_dir: Path) -> None:
+    """Fit a candidate for measurement only, deliberately not under the trained filename.
+
+    Whether a reference rewards walking more than marching in place is a property
+    of the fitted coefficients, so it can only be measured after a fit -- but
+    reviewing several candidates by hand just to discard most of them is worse
+    practice than screening first and reviewing only the winner. Screening
+    therefore skips the approval gate, and to keep that gate intact the output is
+    written as screening_coefficients.pkl: install_reference_motion.py is pointed
+    at polynomial_coefficients.pkl, so a screened bundle cannot reach training
+    without going through generate/approve/fit properly.
+    """
+    remapped = _fit_and_remap(generator_root, artifact_dir)
+    screening_path = artifact_dir / "screening_coefficients.pkl"
+    with open(screening_path, "wb") as handle:
+        pickle.dump(remapped, handle)
+    print(f"Screening fit saved to {screening_path} ({len(remapped)} motions)")
+    print("Measurement only, and not installable. Score it with")
+    print("  scripts/check_reference_locomotion_incentive.py --reference " + str(screening_path))
+    print("then review and approve only the candidate you intend to train on.")
+
+
+def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) -> None:
+    approval = artifact_dir / "reference_review_approved.json"
+    if not approval.is_file():
+        raise RuntimeError("Inspect and approve the generated reference before fitting it")
+    remapped = _fit_and_remap(generator_root, artifact_dir)
     artifact_copy = artifact_dir / "polynomial_coefficients.pkl"
     with open(artifact_copy, "wb") as handle:
         pickle.dump(remapped, handle)
@@ -423,7 +450,7 @@ def fit(generator_root: Path, artifact_dir: Path, playground_data: Path | None) 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("command", choices=("generate", "approve", "fit", "rekey"))
+    parser.add_argument("command", choices=("generate", "approve", "fit", "screen", "rekey"))
     # rekey works entirely from an existing bundle, so it needs no generator.
     parser.add_argument("--generator-root", type=Path)
     parser.add_argument("--artifact-dir", type=Path, required=True)
@@ -434,7 +461,7 @@ def main() -> None:
     )
     parser.add_argument("--playground-data", type=Path)
     args = parser.parse_args()
-    if args.command in ("generate", "fit") and args.generator_root is None:
+    if args.command in ("generate", "fit", "screen") and args.generator_root is None:
         parser.error(f"--generator-root is required for {args.command}")
     artifact_dir = args.artifact_dir.resolve()
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -442,6 +469,8 @@ def main() -> None:
         generate(args.generator_root.resolve(), artifact_dir)
     elif args.command == "approve":
         approve(artifact_dir, args.review_note, args.expect_fingerprint)
+    elif args.command == "screen":
+        screen(args.generator_root.resolve(), artifact_dir)
     elif args.command == "rekey":
         rekey(artifact_dir, args.playground_data)
     else:
