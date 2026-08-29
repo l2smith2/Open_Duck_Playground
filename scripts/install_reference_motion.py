@@ -23,8 +23,8 @@ TRAINING_REFERENCE = (
 )
 
 
-def verify(path: Path, expected_entries: int | None) -> int:
-    """Load the reference the same way training does and report entry count."""
+def verify(path: Path, expected_entries: int | None) -> tuple[int, float]:
+    """Load the reference the same way training does; report entries and stride period."""
     from playground.common.poly_reference_motion import PolyReferenceMotion
 
     prm = PolyReferenceMotion(str(path))
@@ -35,7 +35,7 @@ def verify(path: Path, expected_entries: int | None) -> int:
         )
     if prm.nb_steps_in_period is None or prm.nb_steps_in_period <= 0:
         raise SystemExit(f"Reference at {path} has invalid nb_steps_in_period")
-    return entries
+    return entries, float(prm.period)
 
 
 def main() -> None:
@@ -51,6 +51,14 @@ def main() -> None:
         default=None,
         help="Fail unless the reference exposes exactly this many command entries",
     )
+    parser.add_argument(
+        "--allow-cadence-change",
+        action="store_true",
+        help=(
+            "install even though the new reference has a different stride period than the "
+            "one already installed; only valid when training restarts from scratch"
+        ),
+    )
     args = parser.parse_args()
 
     if args.source:
@@ -58,16 +66,41 @@ def main() -> None:
         if not source.is_file():
             raise SystemExit(f"Fitted reference not found: {source}")
         # Verify before installing so a broken file never lands in the repo.
-        entries = verify(source, args.expect_entries)
+        entries, period = verify(source, args.expect_entries)
+        # A fine-tune inherits the restore checkpoint's gait cadence. The imitation
+        # reward's joint_pos term is an unbounded quadratic on joint angles, so a
+        # policy whose stride cannot phase-lock to the reference clock scores worse
+        # than one that stops walking and sits near the reference mean pose. Swapping
+        # in a reference with a different period therefore does not retime the gait,
+        # it collapses it to marching in place -- which is exactly what happened to
+        # style seeds 201/202/203 when a 0.432 s reference replaced a 0.540 s one.
+        if TRAINING_REFERENCE.is_file() and not args.allow_cadence_change:
+            _, installed_period = verify(TRAINING_REFERENCE, None)
+            if abs(installed_period - period) > 1e-6:
+                raise SystemExit(
+                    f"Refusing to install: {source} has a stride period of {period:.3f}s, "
+                    f"but the reference already installed has {installed_period:.3f}s. Any "
+                    "checkpoint trained on the installed reference is locked to its cadence "
+                    "and will stop walking rather than retime. Match single_support_duration "
+                    f"to the installed cadence (period = 2.4 * single_support_duration, so "
+                    f"{installed_period / 2.4:.4f}) and regenerate, or pass "
+                    "--allow-cadence-change if you are training from scratch."
+                )
         TRAINING_REFERENCE.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, TRAINING_REFERENCE)
-        print(f"Installed {source} -> {TRAINING_REFERENCE} ({entries} command entries)")
+        print(
+            f"Installed {source} -> {TRAINING_REFERENCE} "
+            f"({entries} command entries, {period:.3f}s stride period)"
+        )
 
     if not TRAINING_REFERENCE.is_file():
         raise SystemExit(f"No reference installed at {TRAINING_REFERENCE}")
 
-    entries = verify(TRAINING_REFERENCE, args.expect_entries)
-    print(f"Verified training reference: {TRAINING_REFERENCE} ({entries} command entries)")
+    entries, period = verify(TRAINING_REFERENCE, args.expect_entries)
+    print(
+        f"Verified training reference: {TRAINING_REFERENCE} "
+        f"({entries} command entries, {period:.3f}s stride period)"
+    )
 
 
 if __name__ == "__main__":

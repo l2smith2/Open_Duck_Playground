@@ -98,6 +98,21 @@ download them before the session ends.
   from each recording's root trajectory, never by the request. Use the rekey
   command to repair a bundle fitted before this; it preserves the approved
   motions, and any stage trained against the old keys must be retrained.
+- A fine-tune inherits its restore checkpoint's gait cadence and cannot retime.
+  The imitation reward's joint_pos term is an unbounded quadratic on joint
+  angles, so a policy whose stride cannot phase-lock to the reference clock
+  scores strictly worse than one that stops walking and sits near the reference
+  mean pose; there is no gradient path from one cadence to another. A style
+  reference must therefore keep the stride period of the reference its restore
+  checkpoint trained on. The period is set exactly by
+  period = 2.4 * single_support_duration, which must stay at 0.225 (0.540 s) to
+  match the neutral stages. Cadence is not one of the five style traits. Do not
+  treat placo_defaults.json as the baseline: its single_support_duration of 0.17
+  is not the shipped reference's cadence, and nudging from it to 0.18 cut the
+  stride period by 20% and made style seeds 201/202/203 march in place at
+  0.002 m/s against a 0.10 m/s command. install_reference_motion.py refuses a
+  reference whose period differs from the installed one unless
+  --allow-cadence-change says training restarts from scratch.
 - The command grid is deliberately sparse: eight hand-picked motions, one axis
   varying at a time, so a human can review all of them. Reference lookup must
   therefore never assume a dense dx/dy/dtheta grid.

@@ -245,8 +245,27 @@ It generates eight motions covering standing, forward/backward, sideways, and tu
 - walk_com_height 0.21;
 - walk_foot_height 0.02;
 - walk_trunk_pitch -6 degrees;
-- single_support_duration 0.18;
+- single_support_duration 0.225;
 - feet_spacing 0.16.
+
+single_support_duration is not a style dial. It sets the stride period exactly,
+as period = 2.4 * single_support_duration, and 0.225 is the value that keeps the
+0.540 s period the neutral checkpoint is trained on.
+
+A fine-tune cannot retime a gait. The imitation reward's joint_pos term is an
+unbounded quadratic on joint angles, so a policy whose stride cannot phase-lock
+to the reference clock scores strictly worse than one that stops walking and
+sits near the reference mean pose. Swapping in a faster reference does not speed
+the gait up, it collapses it: style seeds 201, 202, and 203 were first trained
+against a 0.432 s reference and all three marched in place at 0.002 m/s against
+a 0.10 m/s command, surviving every mass-grid cell while going nowhere.
+
+Do not read placo_defaults.json as the baseline. Its single_support_duration of
+0.17 is not the cadence of the shipped reference the neutral stages train
+against; treating it as such, and nudging to 0.18, is what cut the period by
+20%. install_reference_motion.py now refuses to install a reference whose stride
+period differs from the installed one unless --allow-cadence-change says
+training restarts from scratch.
 
 These values are tuned to keep both knees inside the model's joint range and
 bending in the natural direction (see the joint_limit_note in
