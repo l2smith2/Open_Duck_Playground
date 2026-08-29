@@ -137,11 +137,25 @@ download them before the session ends.
   non-associativity from differing CPU/thread counts, tipping a near-boundary
   solution into an invalid branch). A configuration validated on one machine
   is therefore not proven safe on another. scripts/prepare_bdx_reference.py
-  generate() checks every motion against the model's joint ranges on
-  whichever machine actually generates it, retrying with a small
-  walk_com_height nudge (up to 5 times) before failing loudly; do not bypass
-  this by calling the upstream generator directly. Re-check manually with
-  scripts/replay_bdx_reference.py --check when inspecting an existing bundle.
+  generate() checks every motion on whichever machine actually generates it,
+  retrying with a small walk_com_height nudge (up to 5 times) before failing
+  loudly; do not bypass this by calling the upstream generator directly.
+  Re-check manually with scripts/replay_bdx_reference.py --check when
+  inspecting an existing bundle.
+- That check refuses broken solutions, not merely unreachable ones. The
+  reference is a soft imitation target, never a trajectory the robot replays,
+  so it does not have to fit inside the model's joint ranges -- and the stock
+  reference that produces a walking policy does not: all 240 of its entries
+  exceed the knee range, peaking near +2.01 rad against a +-1.571 limit, about
+  0.44 rad over, in the natural direction. Requiring style references to stay
+  inside the range held their knee swing to roughly half the stock reference's
+  at the same command, which is what let marching in place outscore walking.
+  The check therefore refuses a knee that bends backwards (the IK solver's
+  inverted branch, seen in 2 of 240 stock entries) and any joint exceeding its
+  range by more than RANGE_TOLERANCE, currently 0.5 rad, which clears the
+  overshoot the working reference uses. Do not restore a strict range check
+  without also showing the resulting reference still passes
+  scripts/check_reference_locomotion_incentive.py.
 - Because the same input can regenerate into different motions, the human
   review gate is bound to content, not to a path: generate() and --check both
   print a bundle fingerprint, and approve --expect-fingerprint refuses a bundle

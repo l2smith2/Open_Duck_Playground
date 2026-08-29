@@ -297,12 +297,22 @@ CPU/thread counts changing summation order) tipping a near-boundary solution
 into an invalid branch. A configuration proven safe on one machine is
 therefore not proven safe on another.
 
-Because of that, generate() checks every generated motion against every
-joint's real range on whichever machine actually generated it (not just the
-knees: any joint), and retries with a small walk_com_height nudge, up to 5
+Because of that, generate() checks every generated motion on whichever machine
+actually generated it, and retries with a small walk_com_height nudge, up to 5
 times, before failing loudly. This runs automatically as part of the command
 above; a persistent failure means the style parameters need a real change,
 not a retry, and the error message says so.
+
+The check refuses broken solutions, not merely unreachable ones. A reference is
+a soft imitation target, never a trajectory the robot replays, so it does not
+have to fit inside the model's joint ranges -- and the stock reference that
+produces a walking policy does not: all 240 of its entries exceed the knee
+range, peaking near +2.01 rad against a +-1.571 limit. Holding style references
+inside the range capped their leg swing at roughly half the stock reference's
+and let marching in place outscore walking. So the check refuses two things: a
+knee that bends backwards, which is the IK solver landing on its inverted
+branch, and any joint more than 0.5 rad outside its range. Over-flexion in the
+natural direction is allowed, exactly as the working reference does it.
 
 Replay each generated JSON locally to check the style, not the joint limits
 (those are already checked automatically):

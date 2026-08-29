@@ -119,8 +119,26 @@ def generator_script(generator_root: Path) -> Path:
     return script
 
 
+# The reference is a soft imitation target, not a trajectory the robot replays,
+# so it does not have to fit inside the model's joint ranges -- and the reference
+# that demonstrably produces a walking policy does not. All 240 entries of the
+# stock reference exceed the knee range, peaking near +2.01 rad against a
+# +-1.571 limit, about 0.44 rad over, in the natural direction. Requiring style
+# references to stay inside the range capped their knee swing at roughly half
+# the stock reference's at the same command, and that shortfall is what let
+# marching in place outscore walking and collapsed two style attempts. Allow the
+# same overshoot the working reference uses, with a little headroom.
+RANGE_TOLERANCE = 0.5  # rad beyond a joint's range before a motion is refused
+# The knees must still bend forwards. A knee going negative is the upstream
+# solver landing on the inverted branch -- a genuinely broken motion rather than
+# an over-flexed one -- which is what the joint check was really written to
+# catch. It is rare but real: 2 of the 240 stock entries do it, as did one
+# candidate in the walk_foot_height sweep.
+POSITIVE_BEND_JOINTS = ("left_knee", "right_knee")
+
+
 class JointRangeChecker:
-    """Checks generated motions against this fork's MJCF joint ranges.
+    """Checks generated motions for broken solutions, not for strict reachability.
 
     The upstream generator disables IK joint limits (enable_joint_limits(False)
     in placo_walk_engine.py), and its solver has been observed to land on a
@@ -142,7 +160,7 @@ class JointRangeChecker:
         self.known = set(self.base.joint_names)
 
     def check_file(self, motion_file: Path) -> list[str]:
-        """One description per joint whose recorded values exceed its range."""
+        """One description per joint that is bent backwards or wildly out of range."""
         motion = json.loads(motion_file.read_text(encoding="utf-8"))
         joint_names = motion["Joints"]
         offsets = motion["Frame_offset"][0]
@@ -153,11 +171,19 @@ class JointRangeChecker:
             joint_id = self.base.get_joint_id_from_name(name)
             low, high = self.base.model.jnt_range[joint_id]
             values = [frame[offsets["joints_pos"] + i] for frame in motion["Frames"]]
-            if min(values) < low or max(values) > high:
+            low_value, high_value = min(values), max(values)
+            if name in POSITIVE_BEND_JOINTS and low_value < 0.0:
                 problems.append(
                     f"  {motion_file.name}: {name} recorded "
-                    f"[{min(values):+.3f}, {max(values):+.3f}] "
-                    f"exceeds model range [{low:+.3f}, {high:+.3f}]"
+                    f"[{low_value:+.3f}, {high_value:+.3f}] bends backwards; "
+                    "the IK solver landed on the inverted branch"
+                )
+            elif low_value < low - RANGE_TOLERANCE or high_value > high + RANGE_TOLERANCE:
+                problems.append(
+                    f"  {motion_file.name}: {name} recorded "
+                    f"[{low_value:+.3f}, {high_value:+.3f}] exceeds model range "
+                    f"[{low:+.3f}, {high:+.3f}] by more than the "
+                    f"{RANGE_TOLERANCE:.2f} rad tolerance"
                 )
         return problems
 

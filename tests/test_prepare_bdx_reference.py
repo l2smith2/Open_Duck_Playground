@@ -192,3 +192,76 @@ def test_rekey_refiles_an_existing_bundle_without_touching_the_motions(tmp_path,
     assert float(key.split("_")[0]) == pytest.approx(0.04 * GENERATOR_SPEEDUP, abs=1e-3)
     # The approved motion data itself must be untouched.
     assert pbr.bundle_fingerprint(artifact_dir / "recordings") == before
+
+
+class FakeJointModel:
+    """Minimal stand-in for the MJCF model JointRangeChecker reads ranges from."""
+
+    def __init__(self, ranges):
+        self._ranges = ranges
+        self.jnt_range = [ranges[name] for name in ranges]
+        self._order = list(ranges)
+
+    def joint_id(self, name):
+        return self._order.index(name)
+
+
+def _checker_over(ranges):
+    """A JointRangeChecker wired to FakeJointModel, bypassing MuJoCo model loading."""
+    checker = pbr.JointRangeChecker.__new__(pbr.JointRangeChecker)
+    model = FakeJointModel(ranges)
+
+    class Base:
+        pass
+
+    checker.base = Base()
+    checker.base.model = model
+    checker.base.get_joint_id_from_name = model.joint_id
+    checker.known = set(ranges)
+    return checker
+
+
+def _write_motion(tmp_path, joint_values):
+    """A recording holding the given per-joint value sequences."""
+    names = list(joint_values)
+    frames = [
+        [joint_values[name][step] for name in names]
+        for step in range(len(next(iter(joint_values.values()))))
+    ]
+    path = tmp_path / "bdx_inspired_stand_0.0_0.0_0.0.json"
+    path.write_text(json.dumps({
+        "Joints": names,
+        "Frame_offset": [{"joints_pos": 0}],
+        "Frames": frames,
+    }))
+    return path
+
+
+# The reference is a soft imitation target, not a trajectory the robot replays.
+# The stock reference that produces a walking policy exceeds the knee range on
+# every entry by about 0.44 rad, so refusing that overshoot capped style
+# references at roughly half its leg swing and collapsed two style attempts.
+def test_over_flexed_knee_in_the_natural_direction_is_accepted(tmp_path):
+    checker = _checker_over({"left_knee": (-1.5708, 1.5708)})
+    motion = _write_motion(tmp_path, {"left_knee": [1.0, 1.9, 1.4]})
+    assert checker.check_file(motion) == []
+
+
+def test_backwards_knee_is_refused_however_small(tmp_path):
+    """A negative knee is the IK solver's inverted branch, not an over-flexed one."""
+    checker = _checker_over({"left_knee": (-1.5708, 1.5708)})
+    motion = _write_motion(tmp_path, {"left_knee": [1.0, -0.2, 1.4]})
+    problems = checker.check_file(motion)
+    assert len(problems) == 1 and "bends backwards" in problems[0]
+
+
+def test_excursion_beyond_the_tolerance_is_still_refused(tmp_path):
+    checker = _checker_over({"left_hip_pitch": (-0.524, 1.222)})
+    motion = _write_motion(tmp_path, {"left_hip_pitch": [0.0, 1.222 + pbr.RANGE_TOLERANCE + 0.1]})
+    problems = checker.check_file(motion)
+    assert len(problems) == 1 and "tolerance" in problems[0]
+
+
+def test_tolerance_covers_the_overshoot_the_stock_reference_uses(tmp_path):
+    """0.44 rad is the worst the working reference does; the tolerance must clear it."""
+    assert pbr.RANGE_TOLERANCE > 0.44
