@@ -16,8 +16,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from check_reward_locomotion_incentive import (  # noqa: E402
     CANDIDATE_SCALES,
+    IMITATION_BETAS,
+    IMITATION_FLAT,
     default_scales,
     get_rz,
+    imitation_breakdown,
+    policies_from_bundle,
     score,
     tracking_terms,
 )
@@ -26,12 +30,14 @@ from playground.open_duck_mini_v2.joystick import default_config  # noqa: E402
 
 def _record(linvel, gyro_z, command=(0.10, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0), **terms):
     base = {name: 0.0 for name in default_scales()}
+    base.update({f"imitation/{name}": 0.0 for name in IMITATION_FLAT})
     base.update(terms)
     return {
         "terms": base,
         "command": list(command),
         "local_linvel_xy": [list(v) for v in linvel],
         "gyro_z": list(gyro_z),
+        "imitation_sq_error": [[0.0] * len(IMITATION_BETAS)] * len(gyro_z),
     }
 
 
@@ -79,16 +85,15 @@ def test_a_yaw_wobble_is_priced_like_a_yaw_error_of_the_same_size():
 
 
 def test_score_applies_weights_and_totals_them():
-    record = _record(
-        linvel=[[0.10, 0.0]],
-        gyro_z=[0.0],
-        imitation=2.0,
-        alive=1.0,
-    )
+    record = _record(linvel=[[0.10, 0.0]], gyro_z=[0.0], alive=1.0)
     scales = default_scales()
     result = score(record, scales, 0.01, 0.25)
-    assert result["terms"]["imitation"] == pytest.approx(2.0 * scales["imitation"])
     assert result["terms"]["alive"] == pytest.approx(scales["alive"])
+    # imitation is derived from the breakdown rather than read back as a scalar,
+    # so it always matches the per-term table printed beside it.
+    assert result["terms"]["imitation"] == pytest.approx(
+        sum(result["imitation_terms"].values()) * scales["imitation"]
+    )
     assert result["total"] == pytest.approx(sum(result["terms"].values()))
 
 
@@ -101,3 +106,51 @@ def test_get_rz_traces_one_swing_per_cycle():
     assert rz[-1] == pytest.approx(0.0, abs=1e-6)
     assert rz.max() == pytest.approx(0.02, rel=1e-3)
     assert np.argmax(rz) == pytest.approx(50, abs=2)
+
+
+def test_imitation_breakdown_reproduces_the_reference_gate_terms():
+    # This is the number check_reference_locomotion_incentive.py reports, so one
+    # run has to answer both "is this reference safe" and "is this reward safe".
+    # At zero velocity error every exponential is 1.0 and only the weights show.
+    record = _record(linvel=[[0.10, 0.0]] * 3, gyro_z=[0.0] * 3)
+    terms = imitation_breakdown(record, 8.0, 2.0)
+    assert terms["lin_vel_xy"] == pytest.approx(1.0)
+    assert terms["lin_vel_z"] == pytest.approx(1.0)
+    assert terms["ang_vel_xy"] == pytest.approx(0.5)
+    assert terms["ang_vel_z"] == pytest.approx(0.5)
+    assert set(terms) == set(IMITATION_BETAS) | set(IMITATION_FLAT)
+
+
+def test_imitation_beta_sharpens_the_velocity_terms():
+    # beta is sweepable because Disney tuned it for a 0.7 m/s robot and ours is
+    # commanded to 0.15. Raising it must make the same error cost more.
+    record = _record(linvel=[[0.10, 0.0]], gyro_z=[0.0])
+    record["imitation_sq_error"] = [[0.04, 0.0, 0.0, 0.0]]
+    assert imitation_breakdown(record, 8.0, 2.0)["lin_vel_xy"] == pytest.approx(
+        np.exp(-8.0 * 0.04)
+    )
+    assert imitation_breakdown(record, 100.0, 2.0)["lin_vel_xy"] == pytest.approx(
+        np.exp(-100.0 * 0.04)
+    )
+
+
+def test_bundle_picks_the_furthest_neutral_stage_and_the_first_style_seed(tmp_path):
+    for stage, steps in (
+        ("02_neutral_moderate_60m", (1, 2)),
+        ("03_neutral_full_220m", (10, 20)),
+        ("04_style_seed_201_30m", (5,)),
+        ("04_style_seed_202_30m", (5,)),
+    ):
+        directory = tmp_path / stage
+        directory.mkdir()
+        for step in steps:
+            (directory / f"2026_01_01_000000_{step}.onnx").write_bytes(b"x")
+    walking, marching = policies_from_bundle(tmp_path)
+    assert walking.parent.name == "03_neutral_full_220m"
+    assert walking.name.endswith("_20.onnx")
+    assert marching.parent.name == "04_style_seed_201_30m"
+
+
+def test_bundle_without_the_expected_stages_fails_loudly(tmp_path):
+    with pytest.raises(SystemExit):
+        policies_from_bundle(tmp_path)

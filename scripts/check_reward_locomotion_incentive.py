@@ -56,7 +56,20 @@ CANDIDATE_SCALES = {
 
 # Bump when the rollout records something new, so stale caches are refitted
 # rather than silently scored against a shorter record.
-CACHE_VERSION = 2
+CACHE_VERSION = 3
+
+# The four imitation terms that are exponentials of a velocity error. Their beta
+# was tuned by Disney for a 0.7 m/s robot; ours is commanded to 0.15, so beta is
+# worth sweeping alongside the weights. Recomputing them needs only the squared
+# error, so that is what the rollout records.
+IMITATION_BETAS = {
+    "lin_vel_xy": ("lin", 1.0),
+    "lin_vel_z": ("lin", 1.0),
+    "ang_vel_xy": ("ang", 0.5),
+    "ang_vel_z": ("ang", 0.5),
+}
+# The rest do not depend on beta and are cached as they are scored.
+IMITATION_FLAT = ("joint_pos", "joint_vel", "contact")
 
 
 def default_scales() -> dict:
@@ -126,10 +139,10 @@ def rollout(
     start_x = float(data.qpos[0])
     totals, steps = None, 0
     air_times, swing_peaks = [], []
-    # The two tracking terms depend on tracking_sigma, which is worth sweeping
-    # as freely as the weights are, so keep their raw inputs rather than only
-    # their value at one sigma.
-    linvel_trace, gyro_trace = [], []
+    # The two tracking terms depend on tracking_sigma, and four imitation terms
+    # depend on their beta. Both are worth sweeping as freely as the weights
+    # are, so keep their raw inputs rather than only their value at one setting.
+    linvel_trace, gyro_trace, imitation_trace = [], [], []
     for step in range(int(seconds / sim.sim_dt)):
         mujoco.mj_step(model, data)
         if step % sim.decimation:
@@ -176,6 +189,15 @@ def rollout(
         foot_phase = np.array([phase, phase + np.pi])
         linvel_trace.append(data.sensordata[local_linvel][:2].tolist())
         gyro_trace.append(float(sim.get_gyro(data)[2]))
+        base_qvel = sim.get_floating_base_qvel(data.qvel)
+        imitation_trace.append(
+            [
+                float(np.sum((base_qvel[:2] - frame[34:36]) ** 2)),
+                float((base_qvel[2] - frame[36]) ** 2),
+                float(np.sum((base_qvel[3:5] - frame[37:39]) ** 2)),
+                float((base_qvel[5] - frame[39]) ** 2),
+            ]
+        )
         terms = {
             "torques": float(rn.cost_torques(data.actuator_force)),
             "action_rate": float(rn.cost_action_rate(action, prev_action)),
@@ -208,6 +230,7 @@ def rollout(
                 rn.cost_feet_slip(contact, data.sensordata[global_linvel])
             ),
         }
+        terms.update({f"imitation/{k}": float(imitation[k]) for k in IMITATION_FLAT})
         totals = terms if totals is None else {k: totals[k] + v for k, v in terms.items()}
         steps += 1
 
@@ -224,6 +247,7 @@ def rollout(
         "command": command.tolist(),
         "local_linvel_xy": linvel_trace,
         "gyro_z": gyro_trace,
+        "imitation_sq_error": imitation_trace,
         "steps": steps,
         "measured_speed_x": (float(data.qpos[0]) - start_x) / seconds,
         # Diagnostics for the gait terms: what the policy's stride actually does.
@@ -248,20 +272,74 @@ def tracking_terms(record: dict, tracking_sigma: float, ang_tracking_sigma: floa
     }
 
 
+def imitation_breakdown(record: dict, lin_beta: float, ang_beta: float) -> dict:
+    """Every term of reward_imitation, with the four exponentials at these betas.
+
+    Summed, this is exactly what check_reference_locomotion_incentive.py reports,
+    so one run answers both "is this reference safe" and "is this reward safe".
+    """
+    errors = np.array(record["imitation_sq_error"])
+    betas = {"lin": lin_beta, "ang": ang_beta}
+    out = {}
+    for column, (name, (axis, weight)) in enumerate(IMITATION_BETAS.items()):
+        out[name] = float(np.mean(np.exp(-betas[axis] * errors[:, column])) * weight)
+    out.update({name: record["terms"][f"imitation/{name}"] for name in IMITATION_FLAT})
+    return out
+
+
 def score(
-    record: dict, scales: dict, tracking_sigma: float, ang_tracking_sigma: float
+    record: dict,
+    scales: dict,
+    tracking_sigma: float,
+    ang_tracking_sigma: float,
+    lin_beta: float = 8.0,
+    ang_beta: float = 2.0,
 ) -> dict:
     """Weighted per-step reward, split into terms, mirroring Joystick.step."""
+    imitation = imitation_breakdown(record, lin_beta, ang_beta)
     terms = dict(record["terms"])
     terms.update(tracking_terms(record, tracking_sigma, ang_tracking_sigma))
+    terms["imitation"] = float(sum(imitation.values()))
     weighted = {k: terms[k] * w for k, w in scales.items()}
-    return {"terms": weighted, "total": float(sum(weighted.values()))}
+    return {
+        "terms": weighted,
+        "imitation_terms": imitation,
+        "total": float(sum(weighted.values())),
+    }
+
+
+def policies_from_bundle(bundle: Path) -> tuple[Path, Path]:
+    """The known-walking and known-collapsed policy inside an artifact bundle.
+
+    Saves pasting two long checkpoint paths on every run. Walking comes from the
+    furthest-trained neutral stage, marching from the first style seed, each the
+    highest-step ONNX in its directory.
+    """
+
+    def pick(pattern: str, what: str, index: int) -> Path:
+        stages = sorted(d for d in bundle.glob(pattern) if d.is_dir())
+        if not stages:
+            raise SystemExit(f"no {what} stage matching {pattern!r} under {bundle}")
+        stage = stages[index]
+        exports = sorted(
+            stage.glob("*.onnx"), key=lambda path: int(path.stem.rsplit("_", 1)[-1])
+        )
+        if not exports:
+            raise SystemExit(f"{stage} has no ONNX export")
+        return exports[-1]
+
+    return pick("*neutral_full*", "neutral", -1), pick("*style_seed*", "style", 0)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--reference", type=Path, required=True, help="fitted polynomial_coefficients.pkl"
+    )
+    parser.add_argument(
+        "--bundle",
+        type=Path,
+        help="artifact bundle to take both policies from, instead of naming each ONNX",
     )
     parser.add_argument("--walking-onnx", type=Path, help="a policy known to locomote")
     parser.add_argument(
@@ -313,8 +391,25 @@ def main() -> None:
         default=0.25,
         help="how far walking must beat marching before the configuration is worth training with",
     )
+    parser.add_argument(
+        "--imitation-lin-beta",
+        type=float,
+        default=8.0,
+        help="beta for the imitation reward's two linear-velocity exponentials",
+    )
+    parser.add_argument(
+        "--imitation-ang-beta",
+        type=float,
+        default=2.0,
+        help="beta for the imitation reward's two angular-velocity exponentials",
+    )
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+
+    if args.bundle:
+        if args.walking_onnx or args.marching_onnx:
+            raise SystemExit("--bundle already names both policies")
+        args.walking_onnx, args.marching_onnx = policies_from_bundle(args.bundle)
 
     scales = default_scales()
     if args.config:
@@ -369,8 +464,9 @@ def main() -> None:
             args.cache.write_text(json.dumps(cached, indent=2) + "\n", encoding="utf-8")
     walking, marching = cached["walking"], cached["marching"]
 
-    walking_score = score(walking, scales, args.tracking_sigma, ang_tracking_sigma)
-    marching_score = score(marching, scales, args.tracking_sigma, ang_tracking_sigma)
+    betas = (args.imitation_lin_beta, args.imitation_ang_beta)
+    walking_score = score(walking, scales, args.tracking_sigma, ang_tracking_sigma, *betas)
+    marching_score = score(marching, scales, args.tracking_sigma, ang_tracking_sigma, *betas)
     margin = walking_score["total"] - marching_score["total"]
     # PPO sees relative advantage, so a margin buried in a large constant per-step
     # reward is weaker than the same margin against a small one.
@@ -383,7 +479,12 @@ def main() -> None:
         "ang_tracking_sigma": ang_tracking_sigma,
         "walking": {**walking_score, "measured_speed_x": walking["measured_speed_x"]},
         "marching": {**marching_score, "measured_speed_x": marching["measured_speed_x"]},
+        "imitation_lin_beta": args.imitation_lin_beta,
+        "imitation_ang_beta": args.imitation_ang_beta,
         "margin": margin,
+        "imitation_margin": (
+            walking_score["terms"]["imitation"] - marching_score["terms"]["imitation"]
+        ),
         "margin_share": share,
         "min_margin": args.min_margin,
         "pass": margin >= args.min_margin,
@@ -405,6 +506,23 @@ def main() -> None:
         f"{'TOTAL':>18}{'':9}{walking_score['total']:10.3f}"
         f"{marching_score['total']:10.3f}{margin:+10.3f}"
     )
+    # The same breakdown check_reference_locomotion_incentive.py prints, so this
+    # one run also says whether the reference itself is safe to train on.
+    imitation_margin = (
+        walking_score["terms"]["imitation"] - marching_score["terms"]["imitation"]
+    )
+    print(
+        f"\n  reference (imitation only), beta {args.imitation_lin_beta:g} lin / "
+        f"{args.imitation_ang_beta:g} ang"
+    )
+    for name, value in walking_score["imitation_terms"].items():
+        other = marching_score["imitation_terms"][name]
+        print(f"{name:>18}{'':9}{value:10.3f}{other:10.3f}{value - other:+10.3f}")
+    print(
+        f"{'imitation total':>18}{'':9}{sum(walking_score['imitation_terms'].values()):10.3f}"
+        f"{sum(marching_score['imitation_terms'].values()):10.3f}{imitation_margin:+10.3f}"
+    )
+    print()
     print(
         f"{'speed m/s':>18}{'':9}{walking['measured_speed_x']:10.4f}"
         f"{marching['measured_speed_x']:10.4f}"

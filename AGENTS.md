@@ -70,10 +70,10 @@ debugging output or personal data.
   wheels, broken under WSLg)
 - Randomization audit: scripts/randomization_audit.py
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
-- Reference locomotion-incentive gate:
-  scripts/check_reference_locomotion_incentive.py
-- Reward-configuration locomotion-incentive gate:
+- Locomotion-incentive gate, reference and reward together:
   scripts/check_reward_locomotion_incentive.py
+- Locomotion-incentive gate, reference only (subsumed by the above):
+  scripts/check_reference_locomotion_incentive.py
 - Push-recovery evaluation: scripts/evaluate_push_recovery.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
@@ -200,11 +200,20 @@ download them before the session ends.
 - The reward configuration must price walking above marching in place, exactly
   as a reference must, and it is measurable offline in about a minute with
   scripts/check_reward_locomotion_incentive.py. It scores every term in
-  Joystick._get_reward for a known-walking and a known-collapsed policy. Each
-  policy is rolled out once and its per-step term means are cached unweighted,
-  so any number of candidate weight sets, and both tracking sigmas, can then be
-  scored from the cache for free. Run it before changing a weight, and before
-  spending GPU.
+  Joystick._get_reward for a known-walking and a known-collapsed policy, and
+  prints the imitation breakdown beside the total, so one run answers both "is
+  this reference safe to train on" and "is this reward safe to train with".
+  Prefer it over check_reference_locomotion_incentive.py, which reports only the
+  imitation half. Run it before changing a weight, and before spending GPU:
+
+      uv run python scripts/check_reward_locomotion_incentive.py           --reference REFERENCE.pkl --bundle kaggle-outputs/SOME_BUNDLE           --cache artifacts/reward_incentive_rollouts.json
+
+  --bundle takes both policies from an artifact bundle (furthest-trained neutral
+  stage, first style seed) so neither checkpoint path has to be pasted. Each
+  policy is rolled out once and cached, and everything that is not a rollout --
+  every weight, both tracking sigmas, and the imitation betas -- is scored from
+  that cache for free. Adding a new sweepable knob means caching its raw input
+  in rollout() and recomputing it in score(), never re-rolling.
 - tracking_ang_vel used to share tracking_sigma with tracking_lin_vel. Walking
   swings the torso in yaw at about 0.13 rad/s RMS about a correct mean, and
   under sigma^2 = 0.01 that reads as a 1.3-sigma error, so the term paid a
@@ -234,6 +243,27 @@ download them before the session ends.
   the margin by +0.009. All five together at comparator weights make it worse,
   because feet_clearance, feet_height and feet_slip each charge the walking
   policy for motion the collapsed one does not produce.
+- Rescaling the imitation reward's beta values does not help either. The
+  premise that exp(-8*err^2) spans only 0.835-1.0 does not survive measurement:
+  the term sees the instantaneous velocity error, which oscillates, so
+  lin_vel_xy actually runs about 0.52 walking against 0.64 marching. Sweeping
+  the linear beta from 8 to 200 moves the stock margin by at most +0.05, and
+  makes the bdx bundle monotonically worse, +0.31 to -0.03, because sharpening
+  the exponential amplifies terms that already favour standing still.
+- The neutral policy has a low-command dead zone that the reward correction is
+  meant to close, and it is the cheapest acceptance check available. Under the
+  old reward, measured forward speed was:
+
+      stage                     cmd 0.05   cmd 0.10   cmd 0.15
+      20M nominal                 0.0013     0.0014     0.0021
+      80M moderate                0.0019     0.0167     0.0929
+      300M full                   0.0013     0.0645     0.0925
+
+  It does not walk at all until somewhere past 20M, and never walks at 0.05 m/s
+  at any stage. Compare a retrained line against this table rather than against
+  the command. The 20M row is too close to zero to read; 80M is the first
+  informative checkpoint, and cmd 0.05 is the sharpest signal because the old
+  reward never got the policy moving there.
 - A stage is only interchangeable with an earlier one if it trained against the
   same objective. stage_result.json therefore records a reward_config
   fingerprint of the whole reward_config block, and run_training_stage.py

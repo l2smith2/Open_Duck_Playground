@@ -379,21 +379,28 @@ fine-tuning.
 ## Step 7b: check the reward configuration, not just the reference
 
 A reference and a reward configuration can each make marching in place the
-better-paid behaviour, and only the reference had a gate. This scores every term
-in the reward for a policy that walks and a policy that collapsed:
+better-paid behaviour, and only the reference had a gate. This one command
+checks both: it scores every term in the reward for a policy that walks and a
+policy that collapsed, and prints the imitation breakdown -- the reference
+check -- beside the total.
 
-    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --walking-onnx NEUTRAL.onnx --marching-onnx COLLAPSED_STYLE.onnx         --cache artifacts/reward_incentive_rollouts.json         --output artifacts/reward_incentive.json
+    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --bundle kaggle-outputs/YOUR_BUNDLE         --cache artifacts/reward_incentive_rollouts.json         --output artifacts/reward_incentive.json
 
-Rolling the policies out is the slow part and does not depend on the weights, so
---cache records the per-step term means unweighted and any number of candidate
-configurations can then be scored from it instantly:
+--bundle picks both policies out of an artifact bundle, so you never paste a
+checkpoint path: the walking one from the furthest-trained neutral stage, the
+collapsed one from the first style seed. Use --walking-onnx/--marching-onnx if
+you need specific exports.
 
-    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --cache artifacts/reward_incentive_rollouts.json         --scales alive=2.0 --scales feet_air_time=3.0
+Rolling the policies out is the slow part and does not depend on any setting, so
+--cache records the raw per-step inputs and everything else is scored from it
+instantly -- weights, both tracking sigmas, and the imitation betas:
+
+    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --cache artifacts/reward_incentive_rollouts.json         --scales alive=2.0 --scales feet_air_time=3.0 --ang-tracking-sigma 0.5
 
 Run it before changing any reward weight. Two 75-minute training runs were spent
 on plausible-sounding changes that this would have refused in a minute.
 
-Three results worth knowing before you tune anything:
+Four results worth knowing before you tune anything:
 
 - The weights inherited from upstream scored walking only +0.09 ahead of
   standing still at a 0.10 m/s command, even under the stock reference that
@@ -410,6 +417,10 @@ Three results worth knowing before you tune anything:
   contact is zero for it; feet_air_time at weight 3.0 moves the margin by
   +0.009, and wiring all five in at the weights other projects use makes it
   slightly worse.
+- Rescaling the imitation reward's betas does nothing. Sweeping the linear beta
+  from 8 to 200 moves the stock margin by at most +0.05 and makes the bdx bundle
+  monotonically worse. The exponentials were never saturated: they see the
+  instantaneous velocity error, which oscillates.
 
 ## Step 8: style fine-tuning
 
