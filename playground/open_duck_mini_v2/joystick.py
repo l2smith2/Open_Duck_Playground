@@ -76,7 +76,11 @@ def default_config() -> config_dict.ConfigDict:
         ),
         reward_config=config_dict.create(
             scales=config_dict.create(
-                tracking_lin_vel=2.5,
+                # Linear and angular velocity tracking are equally the task,
+                # so they carry equal weight. At the inherited 2.5 against 6.0
+                # the reward paid more than twice as much for holding a
+                # heading as for going anywhere.
+                tracking_lin_vel=6.0,
                 tracking_ang_vel=6.0,
                 torques=-1.0e-3,
                 action_rate=-0.5,  # was -1.5
@@ -85,6 +89,15 @@ def default_config() -> config_dict.ConfigDict:
                 imitation=1.0,
             ),
             tracking_sigma=0.01,  # was working at 0.01
+            # Walking swings the torso in yaw at about 0.13 rad/s RMS about a
+            # correct mean. Sharing tracking_sigma made tracking_ang_vel read
+            # that as a 1.3-sigma error and charge a real gait ~2.4 reward per
+            # step that a policy standing still collects in full -- the
+            # largest anti-locomotion term in the whole reward. 0.25 (sigma
+            # 0.5 rad/s against +-1.0 rad/s commands) is what G1 and T1 use,
+            # and prices the commanded turn without taxing the gait that
+            # delivers it.
+            ang_tracking_sigma=0.25,
         ),
         push_config=config_dict.create(
             enable=True,
@@ -640,7 +653,7 @@ class Joystick(open_duck_mini_v2_base.OpenDuckMiniV2Env):
             "tracking_ang_vel": reward_tracking_ang_vel(
                 info["command"],
                 self.get_gyro(data),
-                self._config.reward_config.tracking_sigma,
+                self._config.reward_config.ang_tracking_sigma,
             ),
             # "orientation": cost_orientation(self.get_gravity(data)),
             "torques": cost_torques(data.actuator_force),

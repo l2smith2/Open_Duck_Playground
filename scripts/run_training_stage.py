@@ -1,6 +1,7 @@
 """Run one resumable training stage and record its timing/artifacts."""
 
 import argparse
+import hashlib
 import json
 import subprocess
 import sys
@@ -8,6 +9,22 @@ import time
 from pathlib import Path
 
 RUNNER = Path("playground/open_duck_mini_v2/runner.py")
+
+
+def reward_config_fingerprint() -> str:
+    """A short digest of the reward the joystick env is currently configured with.
+
+    A stage is only interchangeable with an earlier one if it was trained
+    against the same objective, and the reward weights and tracking sigmas are
+    as much a part of that as the seed or the randomization stage. Without this,
+    changing a weight would silently reuse checkpoints optimised for the old one.
+    Imported lazily so the module still loads where JAX is unavailable.
+    """
+    from playground.open_duck_mini_v2.joystick import default_config
+
+    reward = default_config().reward_config.to_dict()
+    encoded = json.dumps(reward, sort_keys=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:12]
 
 
 def latest_artifacts(output_dir: Path) -> tuple[Path, Path]:
@@ -38,6 +55,7 @@ def reusable_stage_result(
     restore: Path | None,
     imitation_reward_weight_scale: float,
     com_offset_scale: float,
+    reward_config: str,
 ) -> dict | None:
     if not result_path.exists():
         return None
@@ -55,6 +73,7 @@ def reusable_stage_result(
         "restore": str(restore.resolve()) if restore else None,
         "imitation_reward_weight_scale": imitation_reward_weight_scale,
         "com_offset_scale": com_offset_scale,
+        "reward_config": reward_config,
     }
     if any(result.get(key) != value for key, value in expected.items()):
         return None
@@ -95,6 +114,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     failure_path = args.output_dir / "stage_failure.json"
     result_path = args.output_dir / "stage_result.json"
+    reward_config = reward_config_fingerprint()
     completed = reusable_stage_result(
         result_path,
         name=args.name,
@@ -104,6 +124,7 @@ def main() -> None:
         restore=args.restore,
         imitation_reward_weight_scale=args.imitation_reward_weight_scale,
         com_offset_scale=args.com_offset_scale,
+        reward_config=reward_config,
     )
     if completed is not None:
         failure_path.unlink(missing_ok=True)
@@ -157,6 +178,7 @@ def main() -> None:
         "onnx": str(onnx.resolve()),
         "imitation_reward_weight_scale": args.imitation_reward_weight_scale,
         "com_offset_scale": args.com_offset_scale,
+        "reward_config": reward_config,
         "final_training_step": checkpoint_step(checkpoint),
     }
     result_path.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")

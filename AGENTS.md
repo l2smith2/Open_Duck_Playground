@@ -72,6 +72,8 @@ debugging output or personal data.
 - Mass-grid evaluation: scripts/evaluate_mass_grid.py
 - Reference locomotion-incentive gate:
   scripts/check_reference_locomotion_incentive.py
+- Reward-configuration locomotion-incentive gate:
+  scripts/check_reward_locomotion_incentive.py
 - Push-recovery evaluation: scripts/evaluate_push_recovery.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
@@ -110,9 +112,40 @@ download them before the session ends.
   mass-grid cell at 0.002 m/s against a 0.10 m/s command. Gate every candidate
   reference with scripts/check_reference_locomotion_incentive.py before spending
   GPU on it; it scores a known-walking and a known-collapsed policy against the
-  candidate and passes only when walking wins. walk_foot_height is the strongest
-  lever on fore-aft swing, and lowering walk_com_height also helps. Do not read
+  candidate and passes only when walking wins. Measured against the 220M neutral
+  policy and style seed 201: the stock reference scores +1.62, and the two
+  failed bdx bundles -0.78 and -1.67. walk_foot_height is the strongest lever on
+  fore-aft swing, and lowering walk_com_height also helps. Do not read
   "deliberate foot lift" as a reason to reduce walk_foot_height.
+- Passing that gate is necessary, not reassuring. A reference scoring near zero
+  is still far weaker than the stock one, and the reward has to make up the
+  difference. Treat the stock reference's margin as the target, not the
+  threshold.
+- Reference lookup interpolates between recordings; it does not snap to one.
+  Nearest-neighbour lookup made the reference a staircase: with the eight
+  hand-picked bdx motions every command from 0.037 to 0.111 m/s was served the
+  same 0.074 m/s gait, so a 0.10 m/s command was asked to imitate a gait
+  translating at 74% of it while tracking_lin_vel asked for the full speed, and
+  the policy settled in between. blend_for_command projects the query onto the
+  segment from the nearest entry to each candidate and blends with whichever
+  candidate removes the most error, so the result is always a mix of two
+  reviewed motions; sampling is linear in the coefficients, so blending them is
+  the same as blending the sampled trajectories. Blending with the
+  second-nearest entry instead does not work on the dense stock grid, where the
+  two nearest commands normally differ along an axis the query does not need.
+  Axes are compared after normalising each by the span the reference covers,
+  because dx runs over about +-0.15 m/s while dtheta runs over +-1.0 rad/s and
+  raw Euclidean distance let a physically trivial yaw difference outweigh a
+  large speed difference. A 0.10 m/s command now selects a 0.101 m/s reference
+  under the stock grid and 0.100 m/s under the bdx bundle.
+- The reference's own base_angular_vel z channel does not carry the commanded
+  yaw rate, though its linear channel does match its dx key. The stock entry
+  keyed 1.222 rad/s averages 0.041 rad/s on that channel, about 30x low. The
+  imitation reward's ang_vel_z term therefore compares the robot's real gyro
+  against a near-zero target and rewards not turning. This is a property of the
+  recorded data, not of this fork's code; it is recorded here because it caps
+  how far the imitation reward can be trusted on the yaw axis, and correcting it
+  means regenerating rather than editing.
 - A fine-tune inherits its restore checkpoint's gait cadence and cannot retime.
   The imitation reward's joint_pos term is an unbounded quadratic on joint
   angles, so a policy whose stride cannot phase-lock to the reference clock
@@ -161,6 +194,51 @@ download them before the session ends.
   print a bundle fingerprint, and approve --expect-fingerprint refuses a bundle
   that is not the one that was reviewed. Keep generation and approval in
   separate notebook cells so approving can never regenerate.
+
+## Reward invariants
+
+- The reward configuration must price walking above marching in place, exactly
+  as a reference must, and it is measurable offline in about a minute with
+  scripts/check_reward_locomotion_incentive.py. It scores every term in
+  Joystick._get_reward for a known-walking and a known-collapsed policy. Each
+  policy is rolled out once and its per-step term means are cached unweighted,
+  so any number of candidate weight sets, and both tracking sigmas, can then be
+  scored from the cache for free. Run it before changing a weight, and before
+  spending GPU.
+- tracking_ang_vel used to share tracking_sigma with tracking_lin_vel. Walking
+  swings the torso in yaw at about 0.13 rad/s RMS about a correct mean, and
+  under sigma^2 = 0.01 that reads as a 1.3-sigma error, so the term paid a
+  policy standing still about 2.4 reward per step more than a walking one. That
+  was the largest anti-locomotion term in the whole reward -- larger than the
+  imitation differential under either reference. ang_tracking_sigma is now 0.25,
+  the value the mujoco_playground G1 and T1 joystick tasks use, which prices a
+  commanded turn without taxing the gait that delivers it. Do not fold it back
+  into tracking_sigma.
+- tracking_lin_vel is 6.0, equal to tracking_ang_vel, because linear and angular
+  velocity tracking are equally the task. At the inherited 2.5 the reward paid
+  more than twice as much for holding a heading as for going anywhere.
+- Under these weights walking beats marching by +3.6 at a 0.10 m/s command and
+  +4.5 at 0.15 against the stock reference; the inherited weights scored +0.09
+  and +0.10 there. The configuration that trains a walking policy was within
+  noise of preferring stillness, which is why a slightly worse reference tipped
+  it over twice.
+- alive cannot change this ordering. Both policies survive, so both collect it
+  in full: changing it moves the margin's share of the per-step total but not
+  its sign. Do not spend a run on it expecting the collapse to lift.
+- Do not wire reward_feet_air_time, reward_feet_phase, cost_feet_clearance,
+  cost_feet_height or cost_feet_slip into _get_reward on the strength of what
+  the comparator projects do. Measured against our collapsed policy they do not
+  discriminate, because it never leaves the ground at all -- zero flight phases
+  in twelve seconds -- so every term gated on first contact is identically zero
+  for it, earning nothing and paying nothing. feet_air_time at weight 3.0 moves
+  the margin by +0.009. All five together at comparator weights make it worse,
+  because feet_clearance, feet_height and feet_slip each charge the walking
+  policy for motion the collapsed one does not produce.
+- A stage is only interchangeable with an earlier one if it trained against the
+  same objective. stage_result.json therefore records a reward_config
+  fingerprint of the whole reward_config block, and run_training_stage.py
+  refuses to reuse a stage whose fingerprint differs. Every stage completed
+  before the weights above will retrain.
 
 ## Kaggle setup invariants
 
@@ -225,6 +303,10 @@ download them before the session ends.
 - Run git diff --check.
 - Run affected unit tests; for randomization changes, include
   uv run pytest tests/test_mass_randomization.py.
+- For reward or reference-lookup changes, run
+  scripts/check_reward_locomotion_incentive.py against both the stock reference
+  and the installed one, and report the margins. A change that does not improve
+  them is not a fix, whatever else recommends it.
 - Run the 10,000-model audit before full training.
 - Confirm the configured .local-kaggle notebook is ignored.
 - Scan tracked files for credential-like strings and personal identifiers.

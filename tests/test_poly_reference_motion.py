@@ -55,17 +55,59 @@ def test_sparse_cross_grid_loads_and_distinguishes_commands(tmp_path):
     assert not np.allclose(stand, turn)
 
 
-def test_off_grid_command_falls_back_to_nearest(tmp_path):
+def test_off_grid_command_interpolates_between_recordings(tmp_path):
+    # Nearest-neighbour lookup made the reference a staircase: every command
+    # from 0.037 to 0.111 m/s was served the same 0.074 m/s gait, so a 0.10 m/s
+    # command was asked to imitate a gait translating at 74% of it while
+    # tracking_lin_vel asked for the full speed.
     keys = ["0.0_0.0_0.0", "0.04_0.0_0.0"]
     path = _make_pkl(tmp_path, keys)
     prm = PolyReferenceMotion(str(path))
-    # Should not raise, and should match whichever recorded command is closer.
-    near_stand = prm.get_reference_motion(0.005, 0.0, 0.0, 5)
-    near_forward = prm.get_reference_motion(0.035, 0.0, 0.0, 5)
-    stand = prm.get_reference_motion(0.0, 0.0, 0.0, 5)
+    stand = np.array(prm.get_reference_motion(0.0, 0.0, 0.0, 5))
+    forward = np.array(prm.get_reference_motion(0.04, 0.0, 0.0, 5))
+    # The recorded commands still reproduce their own recording exactly.
+    assert np.allclose(prm.get_reference_motion(0.0, 0.0, 0.0, 5), stand)
+    assert np.allclose(prm.get_reference_motion(0.04, 0.0, 0.0, 5), forward)
+    # A command a quarter of the way between them lands a quarter of the way
+    # between the two motions, not on top of the nearer one.
+    quarter = np.array(prm.get_reference_motion(0.01, 0.0, 0.0, 5))
+    assert np.allclose(quarter, 0.75 * stand + 0.25 * forward)
+    assert not np.allclose(quarter, stand)
+
+
+def test_command_outside_the_recorded_range_clamps_to_the_extreme(tmp_path):
+    # Blending must not extrapolate past the fastest reviewed motion.
+    keys = ["0.0_0.0_0.0", "0.04_0.0_0.0"]
+    path = _make_pkl(tmp_path, keys)
+    prm = PolyReferenceMotion(str(path))
     forward = prm.get_reference_motion(0.04, 0.0, 0.0, 5)
-    assert np.allclose(near_stand, stand)
-    assert np.allclose(near_forward, forward)
+    assert np.allclose(prm.get_reference_motion(0.4, 0.0, 0.0, 5), forward)
+
+
+def test_blend_partner_is_chosen_to_close_the_gap_not_by_proximity(tmp_path):
+    # On the dense grid the two nearest commands normally differ along an axis
+    # the query does not need, so blending with the second-nearest entry moves
+    # sideways and leaves dx untouched. The partner is picked by how much error
+    # it removes instead.
+    keys = ["0.0_0.0_0.0", "0.0_0.02_0.0", "0.04_0.0_0.0"]
+    path = _make_pkl(tmp_path, keys)
+    prm = PolyReferenceMotion(str(path))
+    stand = np.array(prm.get_reference_motion(0.0, 0.0, 0.0, 5))
+    forward = np.array(prm.get_reference_motion(0.04, 0.0, 0.0, 5))
+    lateral = np.array(prm.get_reference_motion(0.0, 0.02, 0.0, 5))
+    blended = np.array(prm.get_reference_motion(0.02, 0.0, 0.0, 5))
+    assert np.allclose(blended, 0.5 * stand + 0.5 * forward)
+    assert not np.allclose(blended, lateral)
+
+
+def test_axes_are_compared_on_their_own_scale(tmp_path):
+    # dx runs over about +-0.15 m/s and dtheta over +-1.0 rad/s. Measured raw,
+    # a physically trivial yaw difference outweighs a large speed difference and
+    # the lookup picks a turning motion for a straight-ahead command.
+    keys = ["0.0_0.0_0.0", "0.15_0.0_0.0", "0.0_0.0_1.0"]
+    path = _make_pkl(tmp_path, keys)
+    prm = PolyReferenceMotion(str(path))
+    assert prm.vel_to_index(0.14, 0.0, 0.0) == 1
 
 
 def test_dense_grid_still_works(tmp_path):

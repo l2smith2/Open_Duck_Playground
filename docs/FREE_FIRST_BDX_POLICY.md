@@ -224,7 +224,9 @@ Training adds exactly these steps:
 | Moderate | 60M | 80M | trunk 90-110%, head 85-115%, COM +/-5 mm |
 | Full | 220M | 300M | full configured envelope |
 
-Each stage restores the preceding checkpoint. The stage runner writes stage_result.json with the checkpoint, ONNX path, runtime, seed, and restore source.
+Each stage restores the preceding checkpoint. The stage runner writes stage_result.json with the checkpoint, ONNX path, runtime, seed, restore source, and a fingerprint of the reward configuration.
+
+A stage is only reusable if it trained against the same objective, so changing a reward weight or tracking sigma changes that fingerprint and the stage runs again rather than being silently reused. The tracking-reward correction in Step 7b changed it, so checkpoints produced before that correction will retrain from the beginning of this sequence. That is deliberate: they were optimised for a reward that paid more for holding a heading than for going anywhere.
 
 Full envelope:
 
@@ -263,6 +265,12 @@ marching in place scores higher than walking, and 30M steps of fine-tuning
 reliably find that optimum with no gradient path out. Two style attempts failed
 exactly this way, each surviving every mass-grid cell at 0.002 m/s against a
 0.10 m/s command, so mass-grid survival does not detect it.
+
+Measured against the 220M neutral policy and a collapsed style seed, the stock
+reference scores +1.62 on this check and the two failed bdx bundles score -0.78
+and -1.67. Clearing the +0.25 threshold is the minimum, not the goal: a
+reference near zero is still far weaker than the one that trains a walking
+policy, and every point it gives away has to be made up elsewhere.
 
 walk_foot_height is the strongest lever on fore-aft swing; lowering
 walk_com_height also helps. Do not read "deliberate foot lift" as a reason to
@@ -367,6 +375,41 @@ regenerating and losing its approval:
 Re-install the reference afterwards, and retrain every stage that used the old
 keys: a policy trained against a mislabelled reference is not recoverable by
 fine-tuning.
+
+## Step 7b: check the reward configuration, not just the reference
+
+A reference and a reward configuration can each make marching in place the
+better-paid behaviour, and only the reference had a gate. This scores every term
+in the reward for a policy that walks and a policy that collapsed:
+
+    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --walking-onnx NEUTRAL.onnx --marching-onnx COLLAPSED_STYLE.onnx         --cache artifacts/reward_incentive_rollouts.json         --output artifacts/reward_incentive.json
+
+Rolling the policies out is the slow part and does not depend on the weights, so
+--cache records the per-step term means unweighted and any number of candidate
+configurations can then be scored from it instantly:
+
+    uv run python scripts/check_reward_locomotion_incentive.py         --reference artifacts/bdx_reference/polynomial_coefficients.pkl         --cache artifacts/reward_incentive_rollouts.json         --scales alive=2.0 --scales feet_air_time=3.0
+
+Run it before changing any reward weight. Two 75-minute training runs were spent
+on plausible-sounding changes that this would have refused in a minute.
+
+Three results worth knowing before you tune anything:
+
+- The weights inherited from upstream scored walking only +0.09 ahead of
+  standing still at a 0.10 m/s command, even under the stock reference that
+  trains a working policy. Two thirds of that shortfall was tracking_ang_vel
+  sharing its sigma with tracking_lin_vel: walking swings the torso in yaw at
+  about 0.13 rad/s, which the shared sigma read as a large error, so standing
+  still collected about 2.4 reward per step more than walking. The current
+  configuration separates them and scores +3.6.
+- alive cannot cause or cure this. Both behaviours survive, so both collect it
+  in full; changing it moves the margin's share of the per-step total but never
+  its sign.
+- The unwired foot rewards in playground/common/rewards.py do not help either.
+  The collapsed policy never leaves the ground, so every term gated on first
+  contact is zero for it; feet_air_time at weight 3.0 moves the margin by
+  +0.009, and wiring all five in at the weights other projects use makes it
+  slightly worse.
 
 ## Step 8: style fine-tuning
 

@@ -52,14 +52,17 @@ import pickle
 
 
 class PolyReferenceMotion:
-    """Looks up the recorded reference motion nearest a commanded (dx, dy, dtheta).
+    """Builds the reference motion for a commanded (dx, dy, dtheta).
 
     The command grid does not need to be dense: this indexes the flat list of
-    recorded entries by nearest command-space distance, rather than assuming
-    every combination of dx, dy, and dtheta was recorded (that assumption held
-    for the original 6x4x10 auto-generated grid, but not for a hand-picked,
-    human-reviewed set like the eight bdx_inspired motions, which only vary
-    one axis at a time).
+    recorded entries by command-space distance, rather than assuming every
+    combination of dx, dy, and dtheta was recorded (that assumption held for the
+    original 6x4x10 auto-generated grid, but not for a hand-picked,
+    human-reviewed set like the eight bdx_inspired motions, which only vary one
+    axis at a time).
+
+    Lookup interpolates between the two nearest recordings rather than snapping
+    to one of them; see blend_for_command.
     """
 
     def __init__(self, polynomial_coefficients: str):
@@ -112,26 +115,84 @@ class PolyReferenceMotion:
 
         self.command_points = jp.array(commands)
         self.data_array = jp.array(entries)
+        # dx is in m/s over roughly +-0.15 while dtheta is in rad/s over +-1.0,
+        # so raw Euclidean distance in command space lets a physically trivial
+        # yaw difference outweigh a large forward-speed difference. Measure
+        # every axis relative to the span this reference actually covers.
+        spans = self.command_points.max(axis=0) - self.command_points.min(axis=0)
+        self.command_scale = 1.0 / jp.where(spans > 1e-9, spans, 1.0)
 
         print("[Poly ref data] Done processing")
 
-    def vel_to_index(self, dx, dy, dtheta):
-        dx = jp.clip(dx, self.dx_range[0], self.dx_range[1])
-        dy = jp.clip(dy, self.dy_range[0], self.dy_range[1])
-        dtheta = jp.clip(dtheta, self.dtheta_range[0], self.dtheta_range[1])
+    def _clipped_query(self, dx, dy, dtheta):
+        return jp.array(
+            [
+                jp.clip(dx, self.dx_range[0], self.dx_range[1]),
+                jp.clip(dy, self.dy_range[0], self.dy_range[1]),
+                jp.clip(dtheta, self.dtheta_range[0], self.dtheta_range[1]),
+            ]
+        )
 
-        query = jp.array([dx, dy, dtheta])
-        dists = jp.sum((self.command_points - query) ** 2, axis=1)
+    def _scaled(self, points):
+        """Command-space coordinates with each axis normalised by its span."""
+        return points * self.command_scale
+
+    def vel_to_index(self, dx, dy, dtheta):
+        query = self._scaled(self._clipped_query(dx, dy, dtheta))
+        dists = jp.sum((self._scaled(self.command_points) - query) ** 2, axis=1)
         return jp.argmin(dists)
+
+    def blend_for_command(self, dx, dy, dtheta):
+        """Coefficients for this command, interpolated between two recordings.
+
+        Nearest-neighbour lookup turns the reference into a staircase. With the
+        eight hand-picked bdx motions the whole band from 0.037 to 0.111 m/s is
+        served the same 0.074 m/s gait, so a 0.10 m/s command is asked to
+        imitate a gait that translates at 74% of it while tracking_lin_vel asks
+        for the full speed. The policy cannot satisfy both, and it settles below
+        the command.
+
+        So this blends the nearest recording with whichever second recording
+        best closes the remaining gap: the query is projected onto the segment
+        from the nearest entry to each candidate, and the candidate with the
+        smallest leftover error wins. Picking the second-nearest entry instead
+        would not work on a dense grid, where the two nearest commands usually
+        differ along an axis the query does not need. Sampling is linear in the
+        coefficients, so blending them is the same as blending the two sampled
+        trajectories, and the partner is chosen from entries that were each
+        reviewed.
+
+        The candidate set includes the nearest entry itself, whose segment has
+        zero length and contributes t = 0, so a query no blend can improve on
+        falls back to plain nearest-neighbour rather than to something worse.
+        """
+        query = self._scaled(self._clipped_query(dx, dy, dtheta))
+        points = self._scaled(self.command_points)
+        dists = jp.sum((points - query) ** 2, axis=1)
+        first = jp.argmin(dists)
+
+        anchor = points[first]
+        remainder = query - anchor
+        segments = points - anchor
+        lengths = jp.sum(segments * segments, axis=1)
+        safe = jp.where(lengths > 0.0, lengths, 1.0)
+        t = jp.where(
+            lengths > 0.0, jp.clip(segments @ remainder / safe, 0.0, 1.0), 0.0
+        )
+        leftover = jp.sum((remainder - t[:, None] * segments) ** 2, axis=1)
+        second = jp.argmin(leftover)
+
+        weight = t[second]
+        return (1.0 - weight) * self.data_array[first] + weight * self.data_array[second]
 
     def sample_polynomial(self, t, coeffs):
         return vmap(lambda c: jp.polyval(c, t))(coeffs)
 
     def get_reference_motion(self, dx, dy, dtheta, i):
-        idx = self.vel_to_index(dx, dy, dtheta)
+        coeffs = self.blend_for_command(dx, dy, dtheta)
         t = i % self.nb_steps_in_period / self.nb_steps_in_period
         t = jp.clip(t, 0.0, 1.0)  # safeguard
-        ret = self.sample_polynomial(t, self.data_array[idx])
+        ret = self.sample_polynomial(t, coeffs)
         return ret
 
 
