@@ -245,10 +245,14 @@ Use the notebook reference section or run:
 It generates eight motions covering standing, forward/backward, sideways, and turning commands with:
 
 - walk_com_height 0.21;
-- walk_foot_height 0.02;
+- walk_foot_height 0.04;
 - walk_trunk_pitch -6 degrees;
 - single_support_duration 0.225;
 - feet_spacing 0.16.
+
+These come from configs/bdx_inspired_reference.json, which is the only place
+to change them; the notebook and prepare_bdx_reference.py both read it, so
+there is nothing else to edit.
 
 Before spending GPU on a candidate reference, prove it rewards walking more
 than marching in place:
@@ -275,6 +279,24 @@ policy, and every point it gives away has to be made up elsewhere.
 walk_foot_height is the strongest lever on fore-aft swing; lowering
 walk_com_height also helps. Do not read "deliberate foot lift" as a reason to
 reduce walk_foot_height: halving it to 0.02 is what flattened the leg swing.
+It is now back to 0.04, the generator's own default before that halving, as
+the best-motivated first candidate rather than an arbitrary new number.
+
+Testing a candidate value does not need Cell 7's human-review gate or a
+finished bundle: `prepare_bdx_reference.py screen` fits whatever `generate`
+just recorded straight to a small screening_coefficients.pkl, skipping
+approval entirely, so it cannot reach training:
+
+    uv run python scripts/prepare_bdx_reference.py generate --generator-root PATH_TO_GENERATOR --artifact-dir artifacts/bdx_reference
+    uv run python scripts/prepare_bdx_reference.py screen   --generator-root PATH_TO_GENERATOR --artifact-dir artifacts/bdx_reference
+
+Both generate and screen are CPU-only kinematics/fitting work, not GPU
+training, so they are cheap to repeat while searching for a value. Score the
+resulting screening_coefficients.pkl with check_reward_locomotion_incentive.py
+wherever you already have a walking and a collapsed ONNX cached -- that does
+not have to be the same machine that ran generate/screen. Only run the full
+generate -> replay -> approve -> fit -> install sequence once a candidate
+clears the gate.
 
 single_support_duration is not a style dial. It sets the stride period exactly,
 as period = 2.4 * single_support_duration, and 0.225 is the value that keeps the
