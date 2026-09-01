@@ -27,7 +27,7 @@ import mujoco
 import mujoco.viewer
 
 from playground.open_duck_mini_v2.mujoco_infer_base import MJInferBase
-from scripts.prepare_bdx_reference import bundle_fingerprint
+from scripts.prepare_bdx_reference import RANGE_TOLERANCE, bundle_fingerprint
 
 DEFAULT_MODEL = "playground/open_duck_mini_v2/xmls/scene_flat_terrain.xml"
 
@@ -50,7 +50,15 @@ def usable_joints(base, motion):
 
 
 def check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices) -> list[str]:
-    """Return one description per joint whose recorded values exceed the model's range."""
+    """Return one description per joint whose recorded values exceed the model's range.
+
+    Uses the same RANGE_TOLERANCE as generate()'s JointRangeChecker so this
+    check agrees with the one the bundle already passed on the Kaggle side --
+    otherwise every bundle would show as OVER LIMIT here (the upstream
+    generator disables IK joint limits, so a 0.3-0.4 rad overshoot on the
+    knees is expected and already accepted) and the fingerprint would never
+    print.
+    """
     offsets = motion["Frame_offset"][0]
     joints_pos = offsets["joints_pos"]
     problems = []
@@ -60,10 +68,12 @@ def check_joint_ranges(base, motion, joint_names, joint_addrs, joint_indices) ->
         values = [
             frame[joints_pos + index] for frame in motion["Frames"]
         ]
-        if min(values) < low or max(values) > high:
+        min_value, max_value = min(values), max(values)
+        if min_value < low - RANGE_TOLERANCE or max_value > high + RANGE_TOLERANCE:
             problems.append(
-                f"  {name}: recorded [{min(values):+.3f}, {max(values):+.3f}] "
-                f"exceeds model range [{low:+.3f}, {high:+.3f}]"
+                f"  {name}: recorded [{min_value:+.3f}, {max_value:+.3f}] "
+                f"exceeds model range [{low:+.3f}, {high:+.3f}] by more than "
+                f"the {RANGE_TOLERANCE:.2f} rad tolerance"
             )
     return problems
 
