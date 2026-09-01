@@ -247,14 +247,15 @@ It generates eight motions covering standing, forward/backward, sideways, and tu
 - walk_com_height 0.21;
 - walk_foot_height 0.05;
 - walk_trunk_pitch -6 degrees;
-- single_support_duration 0.18;
-- double_support_ratio 0.5;
+- single_support_duration 0.225;
+- double_support_ratio 0.18;
 - feet_spacing 0.16.
 
 single_support_duration and double_support_ratio together set the stride
-period, which must stay at 0.540 s. 0.18 with 0.5 gives exactly that. Do not
-read the 0.18 here as the earlier failure: that was 0.18 with
-double_support_ratio 0.18, giving 0.432 s.
+period, which must stay at 0.540 s -- 0.225 with 0.18 gives exactly that.
+double_support_ratio was added as an explicit parameter during the search
+below and then reverted to placo_defaults' 0.18 after 0.5 measurably made
+things worse; see that section before changing it again.
 
 These come from configs/bdx_inspired_reference.json, which is the only place
 to change them; the notebook and prepare_bdx_reference.py both read it, so
@@ -328,13 +329,36 @@ Frozen at -0.78 to three decimals regardless of foot height, so even a perfect
 gains roughly +0.12 per +0.01 of foot height, needing about 0.21 to close on
 its own -- and 0.06 already fails the joint-range check.
 
-`contact` is the blocker, and `double_support_ratio` is what moves it. The
-stock reference spends 37% of its cycle with both feet down; ours spent 15%.
-The contact term scores how many feet match the reference's contact state, and
-the collapsed policy never lifts a foot -- so a reference rarely in double
-support hands it a free match for most of the cycle. That parameter was never
-in this config; it silently inherited placo_defaults' 0.18. It is now explicit
-at 0.5.
+**Tested and reverted: raising double_support_ratio to move the frozen
+contact term.** The theory was that the stock reference's higher
+double-support fraction (37% vs our 15%) was why its contact term favoured
+walking, so matching it (dsr 0.5, giving 33%) should help. It made things
+worse instead: total margin +0.79 -> +0.417, `joint_pos` -0.398 -> -0.765
+(less swing time, the risk flagged before trying it), and the contact
+differential barely moved at all (-0.455 -> -0.458) despite both% now
+matching stock exactly. Reverted to placo_defaults' 0.18.
+
+**Why it couldn't have worked, confirmed directly:** the "known-walking"
+screening proxy is the *unmodified* 220M neutral checkpoint. At inference it
+receives only a 2-value phase signal (`imitation_phase`), never the
+reference's actual target joint angles or contacts -- it cannot reproduce a
+candidate reference's specific footfall pattern, it just executes its own
+stock-trained gait, driven by phase alone. Replaying it against the dsr-0.5
+candidate and comparing its actual per-step contacts to the reference's,
+phase-by-phase, gave only **4 exact matches out of 50 steps** over one
+warmed-up cycle, despite both sharing the same 0.540 s period. So the
+`contact` and `joint_pos` numbers measured against any bdx candidate mostly
+reflect how much that candidate happens to coincidentally resemble stock, not
+a property of the candidate itself -- and `contact` is hit hardest, since a
+static marching policy trivially half-matches almost any reference while a
+real but foreign-phased gait can score worse than standing still.
+
+**Do not chase further contact-term improvements this way.** The coarse
+pass/fail signal is still trustworthy -- it correctly predicted the original
+real training collapses (rejected bundles scored around -1.5, which is what
+actually collapsed) -- but fine differences within the passing range (+0.3 to
++0.8 seen so far) are largely proxy noise. The next real test of reference
+quality is training a style seed, not more screening.
 
 Testing a candidate value does not need Cell 7's human-review gate or a
 finished bundle: `prepare_bdx_reference.py screen` fits whatever `generate`

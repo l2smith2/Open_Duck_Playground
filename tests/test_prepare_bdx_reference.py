@@ -191,8 +191,10 @@ def test_generate_writes_the_configured_gait_timing_into_the_preset(tmp_path, mo
 def test_configured_gait_timing_holds_the_trained_stride_period(tmp_path):
     # The invariant is the 0.540 s period the neutral checkpoint trained on,
     # not any single parameter. ssd 0.18 with double_support_ratio 0.18 gives
-    # 0.432 s and collapsed three style seeds; ssd 0.18 with 0.5 gives 0.540 s.
-    # Judging a change by ssd alone cannot tell those two apart.
+    # 0.432 s and collapsed three style seeds; the config that actually reaches
+    # 0.540 s changed which parameters it uses over time (this reads whatever
+    # is currently configured), so judging a change by ssd alone cannot tell
+    # a working config from a broken one -- only the resulting period can.
     params = pbr.load_style()["parameters"]
     single_support_timesteps = 10
     period = (

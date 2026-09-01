@@ -170,17 +170,40 @@ download them before the session ends.
   of foot height, which would need walk_foot_height near 0.21 to close alone --
   and 0.06 already fails the joint-range check. Raising foot height further is
   not the way to a good reference.
-- The contact term is the frozen blocker, and double_support_ratio is what
-  moves it. Measured 2026-09-01 at a 0.10 m/s command: the stock reference
-  spends 37% of its cycle with both feet down, ours spent 15%. The imitation
-  reward's contact term scores how many feet match the reference's contact
-  state, and the collapsed policy never lifts a foot, so a reference that is
-  rarely in double support hands it a standing match for most of the cycle.
-  double_support_ratio was never in the style config -- it inherited
-  placo_defaults' 0.18 -- and is now an explicit parameter at 0.5, giving 33%
-  double support. single_support_duration drops to 0.18 in the same change
-  purely to hold the 0.540 s period; see the cadence invariant above, and do
-  not read that 0.18 as the 0.432 s failure, which had dsr 0.18 too.
+- TESTED AND REVERTED (2026-09-01): raising double_support_ratio to move the
+  frozen contact term. The theory was that the stock reference's higher
+  double-support fraction (37% vs our 15%) was why its contact term favoured
+  walking, so matching it (dsr 0.5, giving 33%) should help. It made things
+  worse: total margin +0.79 -> +0.417, joint_pos -0.398 -> -0.765 (less swing
+  time, as flagged as a risk when this was proposed), and the contact
+  differential barely moved at all (-0.455 -> -0.458) despite both% now
+  matching stock exactly. Reverted; config is back to walk_foot_height 0.05,
+  single_support_duration 0.225, double_support_ratio 0.18 (placo_defaults),
+  the best validated result: +0.79 / -1.18.
+- Root cause of why that fix (and probably any further reference-parameter
+  tuning aimed at the contact term) can't work: the "known-walking" screening
+  proxy is the UNMODIFIED 220M neutral checkpoint, which at inference receives
+  only a 2-value phase signal (imitation_phase), never the reference's actual
+  target joint angles or contacts. It cannot reproduce a candidate reference's
+  specific footfall pattern -- it just executes its own stock-trained gait,
+  driven by phase alone. Confirmed directly: replaying it against the dsr-0.5
+  candidate and comparing its actual per-step contact sequence to the
+  reference's, phase-by-phase, gave only 4/50 exact matches over one warmed-up
+  cycle, despite both having the same 0.540 s period. So the contact and
+  joint_pos numbers measured against ANY bdx candidate reflect how much that
+  candidate's specific pattern coincidentally resembles stock's, not a
+  property of the candidate itself. This makes the discrete contact term
+  particularly unreliable this way: a static marching policy trivially
+  half-matches almost any reference (one foot right by default), while a real
+  but foreign-phased walking gait can score worse than standing still.
+  DO NOT chase further contact-term improvements via walk_foot_height,
+  double_support_ratio, or similar tuning using this screening method. The
+  coarse pass/fail signal remains trustworthy -- it correctly predicted the
+  original real training collapses (rejected bundles scored around -1.5,
+  which is what actually collapsed) -- but fine differences within the
+  passing range (+0.3 to +0.8 seen so far) are largely proxy noise, not signal
+  worth optimising against. The next real test of reference quality is
+  training, not more screening.
 - Reference lookup interpolates between recordings; it does not snap to one.
   Nearest-neighbour lookup made the reference a staircase: with the eight
   hand-picked bdx motions every command from 0.037 to 0.111 m/s was served the
