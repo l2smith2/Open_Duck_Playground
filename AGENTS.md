@@ -122,6 +122,24 @@ download them before the session ends.
   is still far weaker than the stock one, and the reward has to make up the
   difference. Treat the stock reference's margin as the target, not the
   threshold.
+- walk_foot_height search (2026-09-01), screened against the 220M neutral
+  policy and style seed 201 with the fixed reward config (screen fits without
+  needing the human-review gate):
+
+      walk_foot_height   total margin   imitation-only margin
+      0.02 (rejected)          +0.31            -1.54
+      0.04                     +0.67            -1.31
+      0.06 (in progress)          ?                ?
+
+  0.04 clears the +0.25 total-margin threshold but the imitation reward alone
+  is still net-negative for walking (stock is +1.62); the pass rides on the
+  tracking-reward fix, not on the reference itself being good yet. This
+  comparison has a ceiling worth remembering: the "known-walking" proxy is
+  the existing 220M neutral policy, which only swings about 0.351 rad on its
+  own (versus stock's 0.837), so it cannot demonstrate matching a reference
+  demanding a bigger swing even where a policy actually trained on it would.
+  If the margin stops climbing with walk_foot_height, check whether joint_pos
+  is the term that stalled before concluding the lever stopped working.
 - Reference lookup interpolates between recordings; it does not snap to one.
   Nearest-neighbour lookup made the reference a staircase: with the eight
   hand-picked bdx motions every command from 0.037 to 0.111 m/s was served the

@@ -245,7 +245,7 @@ Use the notebook reference section or run:
 It generates eight motions covering standing, forward/backward, sideways, and turning commands with:
 
 - walk_com_height 0.21;
-- walk_foot_height 0.04;
+- walk_foot_height 0.06;
 - walk_trunk_pitch -6 degrees;
 - single_support_duration 0.225;
 - feet_spacing 0.16.
@@ -279,8 +279,25 @@ policy, and every point it gives away has to be made up elsewhere.
 walk_foot_height is the strongest lever on fore-aft swing; lowering
 walk_com_height also helps. Do not read "deliberate foot lift" as a reason to
 reduce walk_foot_height: halving it to 0.02 is what flattened the leg swing.
-It is now back to 0.04, the generator's own default before that halving, as
-the best-motivated first candidate rather than an arbitrary new number.
+
+Measured search so far, screened (not yet approved) against the 220M neutral
+policy and a collapsed style seed:
+
+    walk_foot_height   total margin   imitation-only margin
+    0.02 (rejected)         +0.31              -1.54
+    0.04                    +0.67              -1.31
+    0.06 (current, untested)   ?                  ?
+
+0.04 was the generator's own default before the 0.02 halving, and is a real
+improvement, but the imitation reward alone is still net-negative for
+walking -- clearing the +0.25 total-margin threshold on the back of the
+tracking-reward fix, not on the reference being good yet. 0.06 tests whether
+the trend continues. Note the comparison's own ceiling: the "known-walking"
+policy used here is the existing 220M neutral checkpoint, which swings only
+about 0.351 rad on its own and cannot demonstrate matching a larger reference
+swing even if a policy actually trained on it would. If the margin stalls
+rather than keeps climbing, that ceiling is the likely reason, not proof the
+lever stopped working.
 
 Testing a candidate value does not need Cell 7's human-review gate or a
 finished bundle: `prepare_bdx_reference.py screen` fits whatever `generate`

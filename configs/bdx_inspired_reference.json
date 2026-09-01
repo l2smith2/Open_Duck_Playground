@@ -11,13 +11,13 @@
   ],
   "parameters": {
     "walk_com_height": 0.21,
-    "walk_foot_height": 0.04,
+    "walk_foot_height": 0.06,
     "walk_trunk_pitch": -6.0,
     "single_support_duration": 0.225,
     "feet_spacing": 0.16
   },
   "cadence_note": "single_support_duration sets the stride period exactly: period = 2.4 * single_support_duration (the generator quantises to single_support_timesteps=10 plus round(double_support_ratio*10)=2, so 2*(10+2) timesteps of ssd/10 each). It must stay at 0.225, giving the 0.540 s period the neutral checkpoint is trained on. Cadence is not one of the five style traits, and changing it is not a style choice: the imitation reward's joint_pos term is an unbounded quadratic on joint angles, so a policy whose stride cannot phase-lock to the reference clock scores strictly worse than one that stops walking and sits near the reference mean pose. Style fine-tuning from a cadence-mismatched reference therefore collapses to marching in place, with no gradient path back to walking. Verified: at a 0.540 s clock the 220M neutral policy scores -0.79 on joint_pos, versus -1.80 at every other period and -1.26 for a standing policy.",
-  "joint_limit_note": "Values validated so both knees stay within the model's +/-1.5708 rad range and bend in the natural (positive) direction across all eight motions. The upstream generator disables IK joint limits, so any change here must be re-validated: lowering walk_com_height, lowering feet_spacing, or raising walk_foot_height all increase required knee flexion.",
+  "joint_limit_note": "walk_foot_height 0.02 and 0.04 were both validated by generate()'s self-check (both knees bend in the natural/positive direction, and JointRangeChecker's RANGE_TOLERANCE of 0.5 rad past the model's +/-1.5708 rad range is the accepted overshoot -- see AGENTS.md's reference motion invariants). 0.06 has not been generated yet; the upstream generator disables IK joint limits, so raising walk_foot_height further is not guaranteed to validate and generate() will self-check it and retry with a small walk_com_height nudge before failing loudly. Lowering walk_com_height or feet_spacing has the same effect on required knee flexion as raising walk_foot_height, and is worth trying together if walk_foot_height alone stops improving the incentive margin.",
   "baseline": {
     "walk_com_height": 0.20,
     "walk_foot_height": 0.04,
