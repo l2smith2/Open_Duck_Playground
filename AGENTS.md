@@ -265,6 +265,35 @@ download them before the session ends.
   the command. The 20M row is too close to zero to read; 80M is the first
   informative checkpoint, and cmd 0.05 is the sharpest signal because the old
   reward never got the policy moving there.
+- Tested (2026-09-01): retraining the full 300M neutral line under the fixed
+  reward and interpolated reference. The cmd 0.05 dead zone did NOT close, and
+  cmd 0.10 at 300M did not meaningfully improve:
+
+      stage           cmd 0.05          cmd 0.10          cmd 0.15
+      20M nominal    0.0013 -> 0.0015  0.0014 -> 0.0014  0.0021 -> 0.0017
+      80M moderate   0.0019 -> 0.0018  0.0167 -> 0.0535  0.0929 -> 0.1103
+      300M full      0.0013 -> 0.0008  0.0645 -> 0.0652  0.0925 -> 0.1103
+
+  (old -> new, uv run python scripts/report_command_tracking.py). At 300M, cmd
+  0.10 moved +1% and cmd 0.05 got slightly worse -- both changes are noise, not
+  signal. The real effect is entirely at 80M: cmd 0.10 there is 3.2x faster
+  under the new reward (0.0167 -> 0.0535), i.e. the new reward reaches a usable
+  gait in far fewer steps, but that lead almost entirely evaporates by 300M
+  because the OLD reward closes most of the gap over the same later steps
+  (0.0167 -> 0.0645 old, vs 0.0535 -> 0.0652 new). Both configurations converge
+  to nearly the same terminal cmd-0.10 speed by 300M. Read this as: the reward
+  fix is confirmed to prevent the marching-in-place collapse and to speed up
+  early convergence, but it is NOT confirmed to raise the neutral policy's
+  asymptotic cruising speed, and the cmd 0.05 dead zone specifically remains
+  unexplained and unfixed. Do not claim the reward fix solved the velocity
+  deficit; it did not, only the collapse. cmd 0.15 improved a real, modest
+  +19% at every stage, which is the one number here that unambiguously moved.
+  Something else (a genuine cadence/amplitude ceiling from the fixed 0.540 s
+  stride period, or full-randomization robustness trading away speed) likely
+  caps cmd-0.10 cruising speed independent of reward shape; not yet
+  investigated. This does not block moving on to the reference/style stages --
+  the neutral checkpoint is not regressed, only unimproved at cmd 0.10/0.05 --
+  but do not re-cite the earlier prediction of a clear win there as if it held.
 - A stage is only interchangeable with an earlier one if it trained against the
   same objective. stage_result.json therefore records a reward_config
   fingerprint of the whole reward_config block, and run_training_stage.py
@@ -293,6 +322,14 @@ download them before the session ends.
   numbered in run order. Keep the numbering contiguous and update it when
   cells are added, removed, or reordered, and refer to cells by that number in
   guides and in conversation so instructions are unambiguous.
+- The header is followed by a second comment line estimating that cell's
+  run time from scratch: "# Measured this session (T4 x2): ..." once a real
+  Kaggle run has timed it, "# Estimated time: ..." otherwise, with the basis
+  stated (scaled from which other measured stage, or genuinely unmeasured).
+  Update the measured lines from the actual elapsed_seconds in
+  stage_result.json once a stage completes, rather than leaving a stale
+  estimate standing next to a real number. This applies to any new Kaggle
+  cell offered in conversation too, not only the tracked notebook.
 - Do not use Save & Run All while developing because the notebook contains
   benchmark and human-review gates.
 - A notebook cell must never depend on a Python variable defined by an earlier
