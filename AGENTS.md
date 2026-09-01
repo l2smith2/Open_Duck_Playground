@@ -74,6 +74,7 @@ debugging output or personal data.
   scripts/check_reward_locomotion_incentive.py
 - Locomotion-incentive gate, reference only (subsumed by the above):
   scripts/check_reference_locomotion_incentive.py
+- Per-stage achieved-speed report: scripts/report_command_tracking.py
 - Push-recovery evaluation: scripts/evaluate_push_recovery.py
 - Style review: scripts/make_blind_style_review.py
 - Paid guard: scripts/paid_budget_guard.py
