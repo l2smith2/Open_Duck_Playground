@@ -224,6 +224,12 @@ def generate(generator_root: Path, artifact_dir: Path) -> None:
             "walk_foot_height": params["walk_foot_height"],
             "walk_trunk_pitch": params["walk_trunk_pitch"],
             "single_support_duration": params["single_support_duration"],
+            # Sets what fraction of the stride has both feet down, which the
+            # imitation reward's contact term scores directly. Left at
+            # placo_defaults' 0.18 the reference spent only 15% of the cycle in
+            # double support against the stock reference's 37%, and the contact
+            # term then paid marching in place more than walking.
+            "double_support_ratio": params["double_support_ratio"],
             "feet_spacing": params["feet_spacing"],
         })
         preset_path = presets_dir / f"bdx_inspired_{name}.json"

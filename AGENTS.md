@@ -129,8 +129,8 @@ download them before the session ends.
       walk_foot_height   total margin   imitation-only margin
       0.02 (rejected)          +0.31            -1.54
       0.04                     +0.67            -1.31
+      0.05                     +0.79            -1.18
       0.06 REFUSED by generate()'s joint-range self-check, not screened
-      0.05 (in progress)          ?                ?
 
   0.04 clears the +0.25 total-margin threshold but the imitation reward alone
   is still net-negative for walking (stock is +1.62); the pass rides on the
@@ -146,11 +146,41 @@ download them before the session ends.
   tolerance ceiling (model range +/-1.5708 plus RANGE_TOLERANCE 0.5), and 5
   automatic walk_com_height nudges could not clear it -- correctly refused
   rather than shipped. So the ceiling on walk_foot_height alone sits between
-  0.04 and 0.06; 0.05 is the next candidate. Do not retry 0.06 as-is. Lowering
-  walk_com_height or feet_spacing increases required knee flexion the same
-  way raising walk_foot_height does, so neither can compensate for an
-  over-range walk_foot_height -- only raising walk_com_height (the opposite
-  direction) could buy headroom to push foot height further, untried.
+  0.05 and 0.06. Do not retry 0.06 as-is. Lowering walk_com_height or
+  feet_spacing increases required knee flexion the same way raising
+  walk_foot_height does, so neither can compensate for an over-range
+  walk_foot_height -- only raising walk_com_height (the opposite direction)
+  could buy headroom to push foot height further, untried.
+- walk_foot_height is EXHAUSTED as a lever, and cannot reach the stock
+  reference's margin no matter how far it is pushed. Decomposing the imitation
+  differential per term across the three screened values shows it moves
+  joint_pos and nothing else:
+
+      term          stock   foot0.02  foot0.04  foot0.05
+      joint_pos     +1.501    -0.882    -0.522    -0.398
+      contact       +0.162    -0.455    -0.455    -0.455
+      lin_vel_xy    +0.093    -0.124    -0.124    -0.124
+      ang_vel_xy    -0.131    -0.131    -0.131    -0.131
+      (others)      -0.004    -0.073    -0.073    -0.072
+      non-joint_pos +0.120    -0.784    -0.783    -0.782
+
+  The non-joint_pos subtotal is frozen at -0.78 to three decimals across every
+  foot height, so even a perfect joint_pos could only reach about +0.72 against
+  the stock reference's +1.62. joint_pos itself improves about +0.12 per +0.01
+  of foot height, which would need walk_foot_height near 0.21 to close alone --
+  and 0.06 already fails the joint-range check. Raising foot height further is
+  not the way to a good reference.
+- The contact term is the frozen blocker, and double_support_ratio is what
+  moves it. Measured 2026-09-01 at a 0.10 m/s command: the stock reference
+  spends 37% of its cycle with both feet down, ours spent 15%. The imitation
+  reward's contact term scores how many feet match the reference's contact
+  state, and the collapsed policy never lifts a foot, so a reference that is
+  rarely in double support hands it a standing match for most of the cycle.
+  double_support_ratio was never in the style config -- it inherited
+  placo_defaults' 0.18 -- and is now an explicit parameter at 0.5, giving 33%
+  double support. single_support_duration drops to 0.18 in the same change
+  purely to hold the 0.540 s period; see the cadence invariant above, and do
+  not read that 0.18 as the 0.432 s failure, which had dsr 0.18 too.
 - Reference lookup interpolates between recordings; it does not snap to one.
   Nearest-neighbour lookup made the reference a staircase: with the eight
   hand-picked bdx motions every command from 0.037 to 0.111 m/s was served the
@@ -182,15 +212,24 @@ download them before the session ends.
   scores strictly worse than one that stops walking and sits near the reference
   mean pose; there is no gradient path from one cadence to another. A style
   reference must therefore keep the stride period of the reference its restore
-  checkpoint trained on. The period is set exactly by
-  period = 2.4 * single_support_duration, which must stay at 0.225 (0.540 s) to
-  match the neutral stages. Cadence is not one of the five style traits. Do not
-  treat placo_defaults.json as the baseline: its single_support_duration of 0.17
-  is not the shipped reference's cadence, and nudging from it to 0.18 cut the
-  stride period by 20% and made style seeds 201/202/203 march in place at
-  0.002 m/s against a 0.10 m/s command. install_reference_motion.py refuses a
-  reference whose period differs from the installed one unless
-  --allow-cadence-change says training restarts from scratch.
+  checkpoint trained on: 0.540 s. THE PERIOD IS THE INVARIANT, not any single
+  parameter. It is set exactly by
+  period = 2 * (10 + round(double_support_ratio * 10)) * single_support_duration / 10
+  (single_support_timesteps is 10). Verified exactly on both earlier bundles:
+  ssd 0.18 / dsr 0.18 gave 0.432 s, ssd 0.225 / dsr 0.18 gave 0.540 s. An
+  earlier version of this file wrote that formula as 2.4 * ssd and said ssd
+  "must stay at 0.225"; that was only true while double_support_ratio sat at
+  placo_defaults' 0.18, and it is not the invariant. Cadence is not one of the
+  five style traits. Do not treat placo_defaults.json as the baseline: its
+  single_support_duration of 0.17 is not the shipped reference's cadence.
+  Beware that ssd 0.18 names both a failure and the current config, and they
+  differ: ssd 0.18 with dsr 0.18 gives 0.432 s, 20% short, and made style seeds
+  201/202/203 march in place at 0.002 m/s against a 0.10 m/s command; ssd 0.18
+  with dsr 0.5 gives exactly 0.540 s and is what configs/bdx_inspired_reference
+  .json now uses. Always judge a change by the period the formula yields, never
+  by ssd alone. install_reference_motion.py refuses a reference whose period
+  differs from the installed one unless --allow-cadence-change says training
+  restarts from scratch.
 - The command grid is deliberately sparse: eight hand-picked motions, one axis
   varying at a time, so a human can review all of them. Reference lookup must
   therefore never assume a dense dx/dy/dtheta grid.

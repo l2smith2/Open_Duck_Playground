@@ -247,8 +247,14 @@ It generates eight motions covering standing, forward/backward, sideways, and tu
 - walk_com_height 0.21;
 - walk_foot_height 0.05;
 - walk_trunk_pitch -6 degrees;
-- single_support_duration 0.225;
+- single_support_duration 0.18;
+- double_support_ratio 0.5;
 - feet_spacing 0.16.
+
+single_support_duration and double_support_ratio together set the stride
+period, which must stay at 0.540 s. 0.18 with 0.5 gives exactly that. Do not
+read the 0.18 here as the earlier failure: that was 0.18 with
+double_support_ratio 0.18, giving 0.432 s.
 
 These come from configs/bdx_inspired_reference.json, which is the only place
 to change them; the notebook and prepare_bdx_reference.py both read it, so
@@ -286,8 +292,8 @@ policy and a collapsed style seed:
     walk_foot_height   total margin   imitation-only margin
     0.02 (rejected)         +0.31              -1.54
     0.04                    +0.67              -1.31
+    0.05                    +0.79              -1.18
     0.06                    REFUSED by generate()'s joint-range self-check
-    0.05 (current, untested)   ?                  ?
 
 0.04 was the generator's own default before the 0.02 halving, and is a real
 improvement, but the imitation reward alone is still net-negative for
@@ -306,9 +312,29 @@ height further, but is untried).
 Note the comparison's own ceiling too: the "known-walking" policy used here
 is the existing 220M neutral checkpoint, which swings only about 0.351 rad on
 its own and cannot demonstrate matching a larger reference swing even if a
-policy actually trained on it would. If the margin stalls rather than keeps
-climbing, that ceiling is the likely reason, not proof the lever stopped
-working.
+policy actually trained on it would.
+
+**walk_foot_height turned out to be exhausted as a lever.** Breaking the
+imitation margin down per term across all three screened values shows it moves
+`joint_pos` and nothing else -- the rest of the margin is frozen:
+
+    term          stock   foot0.02  foot0.04  foot0.05
+    joint_pos     +1.501    -0.882    -0.522    -0.398
+    contact       +0.162    -0.455    -0.455    -0.455
+    non-joint_pos +0.120    -0.784    -0.783    -0.782
+
+Frozen at -0.78 to three decimals regardless of foot height, so even a perfect
+`joint_pos` could only reach about +0.72 against stock's +1.62. `joint_pos`
+gains roughly +0.12 per +0.01 of foot height, needing about 0.21 to close on
+its own -- and 0.06 already fails the joint-range check.
+
+`contact` is the blocker, and `double_support_ratio` is what moves it. The
+stock reference spends 37% of its cycle with both feet down; ours spent 15%.
+The contact term scores how many feet match the reference's contact state, and
+the collapsed policy never lifts a foot -- so a reference rarely in double
+support hands it a free match for most of the cycle. That parameter was never
+in this config; it silently inherited placo_defaults' 0.18. It is now explicit
+at 0.5.
 
 Testing a candidate value does not need Cell 7's human-review gate or a
 finished bundle: `prepare_bdx_reference.py screen` fits whatever `generate`

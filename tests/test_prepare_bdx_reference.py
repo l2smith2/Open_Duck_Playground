@@ -166,6 +166,44 @@ def test_generate_keys_motions_by_measured_velocity_not_requested(tmp_path, monk
     assert entry["dx"] != pytest.approx(0.04, abs=1e-3)
 
 
+def test_generate_writes_the_configured_gait_timing_into_the_preset(tmp_path, monkeypatch):
+    # Regression test: double_support_ratio was not in the style config at all,
+    # so every generated motion silently inherited placo_defaults' 0.18 and
+    # spent 15% of the cycle in double support against the stock reference's
+    # 37%. The imitation reward's contact term then scored marching in place
+    # higher than walking, and no amount of walk_foot_height could move it --
+    # the contact differential stayed frozen at -0.455 across three values.
+    generator_root = _make_generator_root(tmp_path)
+    artifact_dir = tmp_path / "artifact"
+    monkeypatch.setattr(pbr, "MOTION_GRID", (("stand", 0.0, 0.0, 0.0),))
+    _patch_generation(monkeypatch, artifact_dir, FakeChecker({}))
+
+    pbr.generate(generator_root, artifact_dir)
+
+    configured = pbr.load_style()["parameters"]
+    preset = json.loads((artifact_dir / "presets" / "bdx_inspired_stand.json").read_text())
+    for key in ("single_support_duration", "double_support_ratio", "walk_foot_height"):
+        assert preset[key] == pytest.approx(configured[key]), key
+    # placo_defaults' value must not survive into the preset.
+    assert preset["single_support_duration"] != pytest.approx(0.17)
+
+
+def test_configured_gait_timing_holds_the_trained_stride_period(tmp_path):
+    # The invariant is the 0.540 s period the neutral checkpoint trained on,
+    # not any single parameter. ssd 0.18 with double_support_ratio 0.18 gives
+    # 0.432 s and collapsed three style seeds; ssd 0.18 with 0.5 gives 0.540 s.
+    # Judging a change by ssd alone cannot tell those two apart.
+    params = pbr.load_style()["parameters"]
+    single_support_timesteps = 10
+    period = (
+        2
+        * (single_support_timesteps + round(params["double_support_ratio"] * 10))
+        * params["single_support_duration"]
+        / single_support_timesteps
+    )
+    assert period == pytest.approx(0.540, abs=1e-9)
+
+
 def test_rekey_refiles_an_existing_bundle_without_touching_the_motions(tmp_path, monkeypatch):
     generator_root = _make_generator_root(tmp_path)
     artifact_dir = tmp_path / "artifact"
