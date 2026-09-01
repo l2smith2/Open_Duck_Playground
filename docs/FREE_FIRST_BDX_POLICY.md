@@ -245,7 +245,7 @@ Use the notebook reference section or run:
 It generates eight motions covering standing, forward/backward, sideways, and turning commands with:
 
 - walk_com_height 0.21;
-- walk_foot_height 0.06;
+- walk_foot_height 0.05;
 - walk_trunk_pitch -6 degrees;
 - single_support_duration 0.225;
 - feet_spacing 0.16.
@@ -286,18 +286,29 @@ policy and a collapsed style seed:
     walk_foot_height   total margin   imitation-only margin
     0.02 (rejected)         +0.31              -1.54
     0.04                    +0.67              -1.31
-    0.06 (current, untested)   ?                  ?
+    0.06                    REFUSED by generate()'s joint-range self-check
+    0.05 (current, untested)   ?                  ?
 
 0.04 was the generator's own default before the 0.02 halving, and is a real
 improvement, but the imitation reward alone is still net-negative for
 walking -- clearing the +0.25 total-margin threshold on the back of the
-tracking-reward fix, not on the reference being good yet. 0.06 tests whether
-the trend continues. Note the comparison's own ceiling: the "known-walking"
-policy used here is the existing 220M neutral checkpoint, which swings only
-about 0.351 rad on its own and cannot demonstrate matching a larger reference
-swing even if a policy actually trained on it would. If the margin stalls
-rather than keeps climbing, that ceiling is the likely reason, not proof the
-lever stopped working.
+tracking-reward fix, not on the reference being good yet.
+
+0.06 does not get as far as screening: generate() itself refuses it. The left
+motion's right_knee recorded [+0.859, +2.121] rad, 0.05 rad past the 2.071 rad
+tolerance ceiling, and the 5 automatic walk_com_height nudges could not clear
+it. So the ceiling on walk_foot_height alone sits somewhere between 0.04 and
+0.06; 0.05 tests where. Do not retry 0.06 as-is -- either try a value between
+0.04 and 0.06, or change a different lever (raising walk_com_height, the
+opposite of what increases swing, could buy range headroom to push foot
+height further, but is untried).
+
+Note the comparison's own ceiling too: the "known-walking" policy used here
+is the existing 220M neutral checkpoint, which swings only about 0.351 rad on
+its own and cannot demonstrate matching a larger reference swing even if a
+policy actually trained on it would. If the margin stalls rather than keeps
+climbing, that ceiling is the likely reason, not proof the lever stopped
+working.
 
 Testing a candidate value does not need Cell 7's human-review gate or a
 finished bundle: `prepare_bdx_reference.py screen` fits whatever `generate`

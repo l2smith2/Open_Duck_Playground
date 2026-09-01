@@ -129,7 +129,8 @@ download them before the session ends.
       walk_foot_height   total margin   imitation-only margin
       0.02 (rejected)          +0.31            -1.54
       0.04                     +0.67            -1.31
-      0.06 (in progress)          ?                ?
+      0.06 REFUSED by generate()'s joint-range self-check, not screened
+      0.05 (in progress)          ?                ?
 
   0.04 clears the +0.25 total-margin threshold but the imitation reward alone
   is still net-negative for walking (stock is +1.62); the pass rides on the
@@ -140,6 +141,16 @@ download them before the session ends.
   demanding a bigger swing even where a policy actually trained on it would.
   If the margin stops climbing with walk_foot_height, check whether joint_pos
   is the term that stalled before concluding the lever stopped working.
+- 0.06 failed generate()'s self-check (2026-09-01): the left motion's
+  right_knee recorded [+0.859, +2.121] rad, 0.05 rad past the 2.071 rad
+  tolerance ceiling (model range +/-1.5708 plus RANGE_TOLERANCE 0.5), and 5
+  automatic walk_com_height nudges could not clear it -- correctly refused
+  rather than shipped. So the ceiling on walk_foot_height alone sits between
+  0.04 and 0.06; 0.05 is the next candidate. Do not retry 0.06 as-is. Lowering
+  walk_com_height or feet_spacing increases required knee flexion the same
+  way raising walk_foot_height does, so neither can compensate for an
+  over-range walk_foot_height -- only raising walk_com_height (the opposite
+  direction) could buy headroom to push foot height further, untried.
 - Reference lookup interpolates between recordings; it does not snap to one.
   Nearest-neighbour lookup made the reference a staircase: with the eight
   hand-picked bdx motions every command from 0.037 to 0.111 m/s was served the
